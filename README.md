@@ -11,10 +11,14 @@ Currently only Visual Studio 2013 is supported, though other versions of MSVC ma
 The original data should be split up into equally-sized chunks.  If one of these chunks
 is erased, the redundant data can fill in the gap through decoding.
 
-The erasure code is parameterized by three values (`k`, `m`, `bytes`).  These are:
+The erasure code is parameterized by three values (`OriginalCount`, `RecoveryCount`, `BlockBytes`).  These are:
 
-+ The number of blocks of original data (`k`), which must be less than 256.
-+ The number of blocks of redundant data (`m`), which must be no more than `256 - k`.
++ The number of blocks of original data (`OriginalCount`), which must be less than 256.
++ The number of blocks of redundant data (`RecoveryCount`), which must be no more than `256 - OriginalCount`.
+
+For example, if a file is split into 3 equal pieces and sent over a network, `OriginalCount` is 3.
+And if 2 additional redundant packets are generated, `RecoveryCount` is 2.
+In this case up to 256 - 3 = 253 additional redundant packets can be generated.
 
 
 ##### Building: Quick Setup
@@ -112,6 +116,95 @@ The example above is just one way to use the `cm256_decode` function.
 
 This API was designed to be flexible enough for UDP/IP-based file transfer where
 the blocks arrive out of order.
+
+
+#### Benchmark
+
+CM256 demonstrates similar encoding and (worst case) decoding performance:
+
+~~~
+Encoder: 1296 bytes k = 100 m = 1 : 6.14401 usec, 21093.7 MBps
+Decoder: 1296 bytes k = 100 : 6.43658 usec, 20134.9 MBps
+Encoder: 1296 bytes k = 100 m = 2 : 16.9692 usec, 7637.38 MBps
+Decoder: 1296 bytes k = 100 : 19.8949 usec, 6514.24 MBps
+Encoder: 1296 bytes k = 100 m = 3 : 29.2572 usec, 4429.68 MBps
+Decoder: 1296 bytes k = 100 : 33.0606 usec, 3920.07 MBps
+Encoder: 1296 bytes k = 100 m = 4 : 39.7898 usec, 3257.12 MBps
+Decoder: 1296 bytes k = 100 : 40.9601 usec, 3164.06 MBps
+Encoder: 1296 bytes k = 100 m = 5 : 51.7852 usec, 2502.64 MBps
+Decoder: 1296 bytes k = 100 : 54.4184 usec, 2381.55 MBps
+Encoder: 1296 bytes k = 100 m = 6 : 63.1955 usec, 2050.78 MBps
+Decoder: 1296 bytes k = 100 : 64.6584 usec, 2004.38 MBps
+Encoder: 1296 bytes k = 100 m = 7 : 73.7281 usec, 1757.81 MBps
+Decoder: 1296 bytes k = 100 : 72.5578 usec, 1786.16 MBps
+Encoder: 1296 bytes k = 100 m = 8 : 84.2607 usec, 1538.08 MBps
+Decoder: 1296 bytes k = 100 : 86.0161 usec, 1506.69 MBps
+Encoder: 1296 bytes k = 100 m = 9 : 96.5487 usec, 1342.33 MBps
+Decoder: 1296 bytes k = 100 : 95.3784 usec, 1358.8 MBps
+Encoder: 1296 bytes k = 100 m = 10 : 106.789 usec, 1213.61 MBps
+Decoder: 1296 bytes k = 100 : 105.618 usec, 1227.06 MBps
+
+Encoder: 1296 bytes k = 100 m = 20 : 219.429 usec, 590.624 MBps
+Decoder: 1296 bytes k = 100 : 211.237 usec, 613.529 MBps
+
+Encoder: 1296 bytes k = 100 m = 30 : 385.902 usec, 335.836 MBps
+Decoder: 1296 bytes k = 100 : 322.999 usec, 401.239 MBps
+
+Encoder: 1296 bytes k = 100 m = 40 : 444.709 usec, 291.426 MBps
+Decoder: 1296 bytes k = 100 : 430.666 usec, 300.929 MBps
+
+Encoder: 1296 bytes k = 100 m = 50 : 572.563 usec, 226.351 MBps
+Decoder: 1296 bytes k = 100 : 545.646 usec, 237.516 MBps
+~~~
+
+Longhair library results.  Note that I hand-optimized the MemXOR.cpp implementation on this PC to run faster than what is available on github, so this is a fair comparison:
+
+~~~
+Encoded k=100 data blocks with m=1 recovery blocks in 4.09607 usec : 31640.1 MB/s
++ Decoded 1 erasures in 5.85144 usec : 22148.4 MB/s
+Encoded k=100 data blocks with m=2 recovery blocks in 41.5452 usec : 3119.5 MB/s
++ Decoded 2 erasures in 43.5931 usec : 2972.94 MB/s
+Encoded k=100 data blocks with m=3 recovery blocks in 80.7498 usec : 1604.96 MB/s
++ Decoded 3 erasures in 86.6013 usec : 1496.51 MB/s
+Encoded k=100 data blocks with m=4 recovery blocks in 123.465 usec : 1049.69 MB/s
++ Decoded 4 erasures in 127.854 usec : 1013.66 MB/s
+Encoded k=100 data blocks with m=5 recovery blocks in 76.9464 usec : 1684.29 MB/s
++ Decoded 5 erasures in 88.6493 usec : 1461.94 MB/s
+Encoded k=100 data blocks with m=6 recovery blocks in 87.7717 usec : 1476.56 MB/s
++ Decoded 6 erasures in 100.352 usec : 1291.45 MB/s
+Encoded k=100 data blocks with m=7 recovery blocks in 103.863 usec : 1247.8 MB/s
++ Decoded 7 erasures in 127.269 usec : 1018.32 MB/s
+Encoded k=100 data blocks with m=8 recovery blocks in 118.784 usec : 1091.05 MB/s
++ Decoded 8 erasures in 145.701 usec : 889.494 MB/s
+Encoded k=100 data blocks with m=9 recovery blocks in 146.871 usec : 882.406 MB/s
++ Decoded 9 erasures in 158.574 usec : 817.284 MB/s
+Encoded k=100 data blocks with m=10 recovery blocks in 156.819 usec : 826.433 MB/s
++ Decoded 10 erasures in 181.102 usec : 715.619 MB/s
+
+Encoded k=100 data blocks with m=20 recovery blocks in 282.039 usec : 459.511 MB/s
++ Decoded 20 erasures in 370.103 usec : 350.172 MB/s
+
+Encoded k=100 data blocks with m=30 recovery blocks in 428.618 usec : 302.367 MB/s
++ Decoded 30 erasures in 614.693 usec : 210.837 MB/s
+
+Encoded k=100 data blocks with m=40 recovery blocks in 562.323 usec : 230.472 MB/s
++ Decoded 40 erasures in 855.188 usec : 151.546 MB/s
+
+Encoded k=100 data blocks with m=50 recovery blocks in 727.041 usec : 178.257 MB/s
++ Decoded 50 erasures in 1181.11 usec : 109.727 MB/s
+~~~
+
+Results Discussion:
+
+For m=1 they are both running the same kind of code, so they're basically the same.
+
+For m=2 and m=3, CM256 is 2.5x faster.
+
+For m=4, CM256 is 3x faster in this case.  Longhair could use more tuning.  Back when I wrote it, the right time to switch to the Windowed decoder was at m=5, but on my new PC it seems like m=4 is a better time to do it.  CM256 only has one mode so it doesn't require any tuning for best performance.
+
+For m=5...30, CM256 performance is not quite 2x faster, maybe 1.7x or so.
+
+For m>30, CM256 is at least 2x faster.
 
 
 #### Credits
