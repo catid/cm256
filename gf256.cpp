@@ -637,8 +637,6 @@ extern "C" void gf256_mul_mem(gf256_ctx* ctx, void * GF256_RESTRICT vz, const vo
     {
         if (y == 0)
         {
-            // TBD: Our own version of memset too?
-
             memset(vz, 0, bytes);
         }
         return;
@@ -651,11 +649,10 @@ extern "C" void gf256_mul_mem(gf256_ctx* ctx, void * GF256_RESTRICT vz, const vo
     // clr_mask = 0x0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f
     const GF256_M128 clr_mask = _mm_set1_epi8(0x0f);
 
-    // TBD: This might be faster if unrolled to 32/64 bytes at a time.
-
-    // Handle multiples of 16 bytes
     GF256_M128 * GF256_RESTRICT z16 = reinterpret_cast<GF256_M128*>(vz);
     const GF256_M128 * GF256_RESTRICT x16 = reinterpret_cast<const GF256_M128*>(vx);
+
+    // Handle multiples of 16 bytes
     while (bytes >= 16)
     {
         // See above comments for details

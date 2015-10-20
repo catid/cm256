@@ -194,6 +194,8 @@ extern "C" int cm256_encode(
         gf256_add_mem(recoveryBlock, originals[j].Block, params.BlockBytes);
     }
 
+    // TBD: Faster algorithms seem to exist for computing this matrix-vector product.
+
     // Start the x_0 values arbitrarily from the original count.
     const uint8_t x_0 = static_cast<uint8_t>(params.OriginalCount);
 
@@ -397,6 +399,8 @@ void Decoder::Decode()
     {
         pivots[j] = static_cast<uint8_t>(j);
     }
+
+    // TBD: Faster algorithms seem to exist for computing this inverse.
 
     // Gaussian elimination
     // Puts matrix into upper-triangular form

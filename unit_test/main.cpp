@@ -174,18 +174,75 @@ bool ExampleFileUsage()
 }
 
 
-
-
-int main()
+bool FinerPerfTimingTest()
 {
-    if (!ExampleFileUsage())
-    {
-        exit(1);
-    }
-
     if (cm256_init())
     {
-        return 1;
+        return false;
+    }
+
+    static const int MaxBlockBytes = 10000; // multiple of 10
+
+    unsigned char* orig_data = new unsigned char[256 * MaxBlockBytes];
+
+    unsigned char* recoveryData = new unsigned char[256 * MaxBlockBytes];
+
+    cm256_block blocks[256];
+
+    LARGE_INTEGER tsum;
+    tsum.QuadPart = 0;
+
+    cm256_encoder_params params;
+    params.BlockBytes = 1296; // 1296
+    params.OriginalCount = 100;
+    params.RecoveryCount = 30;
+
+    const int trials = 1000;
+    for (int trial = 0; trial < trials; ++trial)
+    {
+        int x = 0;
+        for (int i = 0; i < params.RecoveryCount * params.BlockBytes; ++i)
+        {
+            x ^= orig_data[i];
+        }
+        cout << x << endl;
+
+        for (int i = 0; i < 256; ++i)
+        {
+            blocks[i].Block = orig_data + i * MaxBlockBytes;
+        }
+
+        LARGE_INTEGER t0; ::QueryPerformanceCounter(&t0);
+
+        if (cm256_encode(params, blocks, recoveryData))
+        {
+            return false;
+        }
+
+        LARGE_INTEGER t1; ::QueryPerformanceCounter(&t1);
+        tsum.QuadPart += t1.QuadPart - t0.QuadPart;
+
+        int y = 0;
+        for (int i = 0; i < params.RecoveryCount * params.BlockBytes; ++i)
+        {
+            y ^= recoveryData[i];
+        }
+        cout << y << endl;
+    }
+
+    double opusec = tsum.QuadPart * GetPerfFrequencyInverse() * 1000000. / trials;
+    double mbps = (params.BlockBytes * params.OriginalCount / opusec);
+
+    cout << opusec << " usec, " << mbps << " MBps" << endl;
+    return true;
+}
+
+
+bool BulkPerfTesting()
+{
+    if (cm256_init())
+    {
+        return false;
     }
 
     static const int MaxBlockBytes = 10000; // multiple of 10
@@ -220,7 +277,7 @@ int main()
                     if (cm256_encode(params, blocks, recoveryData))
                     {
                         cout << "Encoder error" << endl;
-                        return 1;
+                        return false;
                     }
 
                     LARGE_INTEGER t1; ::QueryPerformanceCounter(&t1);
@@ -252,7 +309,7 @@ int main()
                     if (cm256_decode(params, blocks))
                     {
                         cout << "Decoder error" << endl;
-                        return 1;
+                        return false;
                     }
 
                     LARGE_INTEGER t1; ::QueryPerformanceCounter(&t1);
@@ -268,53 +325,35 @@ int main()
                 if (!validateSolution(blocks, originalCount, blockBytes))
                 {
                     cout << "Solution invalid" << endl;
-                    return 1;
+                    return false;
                 }
             }
         }
     }
 
-#if 0
-    LARGE_INTEGER tsum;
-    tsum.QuadPart = 0;
+    return true;
+}
 
-    cm256_encoder_params params;
-    params.BlockBytes = 1296; // 1296
-    params.OriginalCount = 100;
-    params.RecoveryCount = 30;
 
-    const int trials = 1000;
-    for (int trial = 0; trial < trials; ++trial)
+int main()
+{
+#if 1
+    if (!ExampleFileUsage())
     {
-        int x = 0;
-        for (int i = 0; i < params.RecoveryCount * params.BlockBytes; ++i)
-        {
-            x ^= orig_data[i];
-        }
-        cout << x << endl;
-
-        LARGE_INTEGER t0; ::QueryPerformanceCounter(&t0);
-
-        if (cm256_encode(params, originals, recoveryData))
-        {
-            return 1;
-        }
-
-        LARGE_INTEGER t1; ::QueryPerformanceCounter(&t1);
-        tsum.QuadPart += t1.QuadPart - t0.QuadPart;
-
-        int y = 0;
-        for (int i = 0; i < params.RecoveryCount * params.BlockBytes; ++i)
-        {
-            y ^= recoveryData[i];
-        }
-        cout << y << endl;
+        exit(1);
     }
-
-    double opusec = tsum.QuadPart * GetPerfFrequencyInverse() * 1000000. / trials;
-    double mbps = (params.BlockBytes * params.OriginalCount / opusec);
-
-    cout << opusec << " usec, " << mbps << " MBps" << endl;
+#endif
+#if 1
+    if (!FinerPerfTimingTest())
+    {
+        exit(2);
+    }
+#endif
+#if 1
+    if (!BulkPerfTesting())
+    {
+        exit(3);
+    }
 #endif
 
     return 0;
