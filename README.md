@@ -157,7 +157,9 @@ Encoder: 1296 bytes k = 100 m = 50 : 572.563 usec, 226.351 MBps
 Decoder: 1296 bytes k = 100 : 545.646 usec, 237.516 MBps
 ~~~
 
-Longhair library results.  Note that I hand-optimized the MemXOR.cpp implementation on this PC to run faster than what is available on github, so this is a fair comparison:
+Longhair Library Results:
+
+Note that I hand-optimized the MemXOR.cpp implementation on this PC to run faster than what is available on github, so this is a fair comparison.
 
 ~~~
 Encoded k=100 data blocks with m=1 recovery blocks in 4.09607 usec : 31640.1 MB/s
