@@ -28,7 +28,7 @@ Include the cm256.* and gf256.* files in your project and consult the cm256.h he
 
 ## Usage
 
-Documentation is provided in the header file [cauchy_256.h](https://github.com/catid/cm256/raw/master/cm256.h).
+Documentation is provided in the header file [cm256.h](https://github.com/catid/cm256/raw/master/cm256.h).
 
 When your application starts up it should call `cm256_init()` to verify that the library is linked properly:
 
