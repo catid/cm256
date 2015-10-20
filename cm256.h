@@ -1,14 +1,37 @@
 /*
-    CM256 Library
-    based on GF256 Library
+	Copyright (c) 2015 Christopher A. Taylor.  All rights reserved.
 
-    No software license, use at your own risk.
+	Redistribution and use in source and binary forms, with or without
+	modification, are permitted provided that the following conditions are met:
+
+	* Redistributions of source code must retain the above copyright notice,
+	  this list of conditions and the following disclaimer.
+	* Redistributions in binary form must reproduce the above copyright notice,
+	  this list of conditions and the following disclaimer in the documentation
+	  and/or other materials provided with the distribution.
+	* Neither the name of CM256 nor the names of its contributors may be
+	  used to endorse or promote products derived from this software without
+	  specific prior written permission.
+
+	THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+	AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+	IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+	ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+	LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+	CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+	SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+	INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+	CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+	ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+	POSSIBILITY OF SUCH DAMAGE.
 */
 
 #ifndef CM256_H
 #define CM256_H
 
 #include "gf256.h"
+
+#include <assert.h>
 
 // Library version
 #define CM256_VERSION 1
@@ -32,15 +55,43 @@ extern int cm256_init_(int version);
 
 // Encoder parameters
 typedef struct cm256_encoder_params_t {
-    // Original block count
+    // Original block count < 256
     int OriginalCount;
 
-    // Recovery block count
+    // Recovery block count < 256
     int RecoveryCount;
 
-    // Number of bytes per block (all are the same size in bytes)
+    // Number of bytes per block (all blocks are the same size in bytes)
     int BlockBytes;
 } cm256_encoder_params;
+
+// Descriptor for data block
+typedef struct cm256_block_t {
+    // Pointer to data received.
+    void* Block;
+
+    // Block index.
+    // For original data, it will be in the range
+    //    [0..(originalCount-1)] inclusive.
+    // For recovery data, the first one's Index must be originalCount,
+    //    and it will be in the range
+    //    [originalCount..(originalCount+recoveryCount-1)] inclusive.
+    unsigned char Index;
+    // Ignored during encoding, required during decoding.
+} cm256_block;
+
+
+// Compute the value to put in the Index member of cm256_block
+static inline unsigned char cm256_get_recovery_block_index(cm256_encoder_params params, int recoveryBlockIndex)
+{
+    assert(recoveryBlockIndex >= 0 && recoveryBlockIndex < params.RecoveryCount);
+    return (unsigned char)(params.OriginalCount + recoveryBlockIndex);
+}
+static inline unsigned char cm256_get_original_block_index(cm256_encoder_params params, int originalBlockIndex)
+{
+    assert(originalBlockIndex >= 0 && originalBlockIndex < params.OriginalCount);
+    return (unsigned char)(originalBlockIndex);
+}
 
 
 /*
@@ -77,21 +128,8 @@ typedef struct cm256_encoder_params_t {
  */
 extern int cm256_encode(
     cm256_encoder_params params, // Encoder parameters
-    unsigned char** originals,   // Array of pointers to original blocks
+    cm256_block* originals,      // Array of pointers to original blocks
     void* recoveryBlocks);       // Output recovery blocks end-to-end
-
-// Descriptor for received data block
-typedef struct cm256_block_t {
-    // Pointer to data received.
-	unsigned char* Block;
-
-    // Block index.
-    // For original data, it will be in the range
-    //    [0..(originalCount-1)] inclusive.
-    // For recovery data, it will be in the range
-    //    [originalCount..(originalCount+recoveryCount-1)] inclusive.
-	unsigned char Index;
-} cm256_block;
 
 /*
  * Cauchy MDS GF(256) decode

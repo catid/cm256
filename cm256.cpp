@@ -1,8 +1,29 @@
 /*
-    CM256 Library
-    based on GF256 Library
+	Copyright (c) 2015 Christopher A. Taylor.  All rights reserved.
 
-    No software license, use at your own risk.
+	Redistribution and use in source and binary forms, with or without
+	modification, are permitted provided that the following conditions are met:
+
+	* Redistributions of source code must retain the above copyright notice,
+	  this list of conditions and the following disclaimer.
+	* Redistributions in binary form must reproduce the above copyright notice,
+	  this list of conditions and the following disclaimer in the documentation
+	  and/or other materials provided with the distribution.
+	* Neither the name of CM256 nor the names of its contributors may be
+	  used to endorse or promote products derived from this software without
+	  specific prior written permission.
+
+	THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+	AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+	IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+	ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+	LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+	CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+	SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+	INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+	CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+	ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+	POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "cm256.h"
@@ -51,7 +72,9 @@
 
 
 // Context object for GF(256) math
+// TBD: We can use constexpr in MSVC 2015 to initialize this at compile time.
 static GF256_ALIGNED gf256_ctx GF256Ctx;
+static bool Initialized = false;
 
 
 //-----------------------------------------------------------------------------
@@ -64,6 +87,13 @@ extern "C" int cm256_init_(int version)
         // User's header does not match library version
         return -10;
     }
+
+    // Avoid re-initialization
+    if (Initialized)
+    {
+        return 0;
+    }
+    Initialized = true;
 
     // Return error code from GF(256) init if required
     return gf256_init(&GF256Ctx);
@@ -116,7 +146,7 @@ static GF256_FORCE_INLINE unsigned char GetMatrixElement(unsigned char x_i, unsi
 
 extern "C" int cm256_encode(
     cm256_encoder_params params, // Encoder params
-    unsigned char** originals,   // Array of pointers to original blocks
+    cm256_block* originals,      // Array of pointers to original blocks
     void* recoveryBlocks)        // Output recovery blocks end-to-end
 {
     // Validate input:
@@ -134,6 +164,10 @@ extern "C" int cm256_encode(
     {
         return -3;
     }
+    if (!Initialized)
+    {
+        return -4;
+    }
 
     uint8_t* recoveryBlock = static_cast<uint8_t*>(recoveryBlocks);
 
@@ -144,7 +178,7 @@ extern "C" int cm256_encode(
 
         for (int i = 0; i < params.RecoveryCount; ++i)
         {
-            memcpy(recoveryBlock + i * params.BlockBytes, originals[0], params.BlockBytes);
+            memcpy(recoveryBlock + i * params.BlockBytes, originals[0].Block, params.BlockBytes);
         }
 
         return 0;
@@ -154,10 +188,10 @@ extern "C" int cm256_encode(
     // Unroll first row of recovery matrix:
     // The matrix we generate for the first row is all ones,
     // so it is merely a parity of the original data.
-    gf256_addset_mem(recoveryBlock, originals[0], originals[1], params.BlockBytes);
+    gf256_addset_mem(recoveryBlock, originals[0].Block, originals[1].Block, params.BlockBytes);
     for (int j = 2; j < params.OriginalCount; ++j)
     {
-        gf256_add_mem(recoveryBlock, originals[j], params.BlockBytes);
+        gf256_add_mem(recoveryBlock, originals[j].Block, params.BlockBytes);
     }
 
     // Start the x_0 values arbitrarily from the original count.
@@ -175,7 +209,7 @@ extern "C" int cm256_encode(
             const uint8_t y_0 = 0;
             const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_0);
 
-            gf256_mul_mem(&GF256Ctx, recoveryBlock, originals[0], matrixElement, params.BlockBytes);
+            gf256_mul_mem(&GF256Ctx, recoveryBlock, originals[0].Block, matrixElement, params.BlockBytes);
         }
 
         // For each original data column,
@@ -184,7 +218,7 @@ extern "C" int cm256_encode(
             const uint8_t y_j = static_cast<uint8_t>(j);
             const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_j);
 
-            gf256_muladd_mem(&GF256Ctx, recoveryBlock, matrixElement, originals[j], params.BlockBytes);
+            gf256_muladd_mem(&GF256Ctx, recoveryBlock, matrixElement, originals[j].Block, params.BlockBytes);
         }
     }
 
@@ -212,7 +246,7 @@ struct Decoder
     uint8_t ErasuresIndices[256];
 
     // Initialize the decoder
-    void Initialize(cm256_encoder_params& params, cm256_block* blocks);
+    bool Initialize(cm256_encoder_params& params, cm256_block* blocks);
 
     // Decode m=1 case
     void DecodeM1();
@@ -221,7 +255,7 @@ struct Decoder
     void Decode();
 };
 
-void Decoder::Initialize(cm256_encoder_params& params, cm256_block* blocks)
+bool Decoder::Initialize(cm256_encoder_params& params, cm256_block* blocks)
 {
     Params = params;
 
@@ -244,6 +278,13 @@ void Decoder::Initialize(cm256_encoder_params& params, cm256_block* blocks)
         if (row < params.OriginalCount)
         {
             Original[OriginalCount++] = block;
+
+            if (ErasuresIndices[row] != 0)
+            {
+                // Error out if two row indices repeat
+                return false;
+            }
+
             ErasuresIndices[row] = 1;
         }
         else
@@ -265,18 +306,20 @@ void Decoder::Initialize(cm256_encoder_params& params, cm256_block* blocks)
             }
         }
     }
+
+    return true;
 }
 
 void Decoder::DecodeM1()
 {
     // XOR all other blocks into the recovery block
-    uint8_t* outBlock = Recovery[0]->Block;
+    uint8_t* outBlock = static_cast<uint8_t*>(Recovery[0]->Block);
     const uint8_t* inBlock = nullptr;
 
     // For each block,
     for (int ii = 0; ii < OriginalCount; ++ii)
     {
-        const uint8_t* inBlock2 = Original[ii]->Block;
+        const uint8_t* inBlock2 = static_cast<const uint8_t*>(Original[ii]->Block);
 
         if (!inBlock)
         {
@@ -308,12 +351,12 @@ void Decoder::Decode()
     // Eliminate original data from the the recovery rows
     for (int originalIndex = 0; originalIndex < OriginalCount; ++originalIndex)
     {
-        const uint8_t* inBlock = Original[originalIndex]->Block;
+        const uint8_t* inBlock = static_cast<const uint8_t*>(Original[originalIndex]->Block);
         const uint8_t inRow = Original[originalIndex]->Index;
 
         for (int recoveryIndex = 0; recoveryIndex < RecoveryCount; ++recoveryIndex)
         {
-            uint8_t* outBlock = Recovery[recoveryIndex]->Block;
+            uint8_t* outBlock = static_cast<uint8_t*>(Recovery[recoveryIndex]->Block);
             const uint8_t x_i = Recovery[recoveryIndex]->Index;
             const uint8_t y_j = inRow;
             const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_j);
@@ -382,7 +425,7 @@ void Decoder::Decode()
             Recovery[i]->Index = ErasuresIndices[j];
 
             // Get the block pointer
-            uint8_t* block = Recovery[i]->Block;
+            uint8_t* block = static_cast<uint8_t*>(Recovery[i]->Block);
 
             if (matrixElement != 1)
             {
@@ -416,7 +459,7 @@ void Decoder::Decode()
         // Look up recovery row from pivots array
         // Get the block pointer
         const uint8_t jIndex = pivots[j];
-        uint8_t* block = Recovery[jIndex]->Block;
+        uint8_t* block = static_cast<uint8_t*>(Recovery[jIndex]->Block);
         uint8_t* row = matrix + jIndex * RecoveryCount;
 
         // For each uncleared row element,
@@ -447,6 +490,14 @@ extern "C" int cm256_decode(
     if (params.OriginalCount + params.RecoveryCount > 256)
     {
         return -2;
+    }
+    if (!blocks)
+    {
+        return -3;
+    }
+    if (!Initialized)
+    {
+        return -4;
     }
 
     // If there is only one block,
