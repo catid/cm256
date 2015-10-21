@@ -123,38 +123,38 @@ the blocks arrive out of order.
 CM256 demonstrates similar encoding and (worst case) decoding performance:
 
 ~~~
-Encoder: 1296 bytes k = 100 m = 1 : 6.14401 usec, 21093.7 MBps
-Decoder: 1296 bytes k = 100 : 6.43658 usec, 20134.9 MBps
-Encoder: 1296 bytes k = 100 m = 2 : 16.9692 usec, 7637.38 MBps
-Decoder: 1296 bytes k = 100 : 19.8949 usec, 6514.24 MBps
-Encoder: 1296 bytes k = 100 m = 3 : 29.2572 usec, 4429.68 MBps
-Decoder: 1296 bytes k = 100 : 33.0606 usec, 3920.07 MBps
-Encoder: 1296 bytes k = 100 m = 4 : 39.7898 usec, 3257.12 MBps
-Decoder: 1296 bytes k = 100 : 40.9601 usec, 3164.06 MBps
+Encoder: 1296 bytes k = 100 m = 1 : 5.55886 usec, 23314.1 MBps
+Decoder: 1296 bytes k = 100 m = 1 : 6.72915 usec, 19259.5 MBps
+Encoder: 1296 bytes k = 100 m = 2 : 17.2617 usec, 7507.93 MBps
+Decoder: 1296 bytes k = 100 m = 2 : 19.6023 usec, 6611.46 MBps
+Encoder: 1296 bytes k = 100 m = 3 : 30.4275 usec, 4259.31 MBps
+Decoder: 1296 bytes k = 100 m = 3 : 32.4755 usec, 3990.7 MBps
+Encoder: 1296 bytes k = 100 m = 4 : 40.6675 usec, 3186.82 MBps
+Decoder: 1296 bytes k = 100 m = 4 : 43.5932 usec, 2972.94 MBps
 Encoder: 1296 bytes k = 100 m = 5 : 51.7852 usec, 2502.64 MBps
-Decoder: 1296 bytes k = 100 : 54.4184 usec, 2381.55 MBps
-Encoder: 1296 bytes k = 100 m = 6 : 63.1955 usec, 2050.78 MBps
-Decoder: 1296 bytes k = 100 : 64.6584 usec, 2004.38 MBps
-Encoder: 1296 bytes k = 100 m = 7 : 73.7281 usec, 1757.81 MBps
-Decoder: 1296 bytes k = 100 : 72.5578 usec, 1786.16 MBps
-Encoder: 1296 bytes k = 100 m = 8 : 84.2607 usec, 1538.08 MBps
-Decoder: 1296 bytes k = 100 : 86.0161 usec, 1506.69 MBps
-Encoder: 1296 bytes k = 100 m = 9 : 96.5487 usec, 1342.33 MBps
-Decoder: 1296 bytes k = 100 : 95.3784 usec, 1358.8 MBps
-Encoder: 1296 bytes k = 100 m = 10 : 106.789 usec, 1213.61 MBps
-Decoder: 1296 bytes k = 100 : 105.618 usec, 1227.06 MBps
+Decoder: 1296 bytes k = 100 m = 5 : 51.4926 usec, 2516.86 MBps
+Encoder: 1296 bytes k = 100 m = 6 : 62.6104 usec, 2069.94 MBps
+Decoder: 1296 bytes k = 100 m = 6 : 64.9509 usec, 1995.35 MBps
+Encoder: 1296 bytes k = 100 m = 7 : 76.3612 usec, 1697.2 MBps
+Decoder: 1296 bytes k = 100 m = 7 : 75.191 usec, 1723.61 MBps
+Encoder: 1296 bytes k = 100 m = 8 : 85.1384 usec, 1522.23 MBps
+Decoder: 1296 bytes k = 100 m = 8 : 83.0904 usec, 1559.75 MBps
+Encoder: 1296 bytes k = 100 m = 9 : 96.2561 usec, 1346.41 MBps
+Decoder: 1296 bytes k = 100 m = 9 : 95.3784 usec, 1358.8 MBps
+Encoder: 1296 bytes k = 100 m = 10 : 110.592 usec, 1171.87 MBps
+Decoder: 1296 bytes k = 100 m = 10 : 109.714 usec, 1181.25 MBps
 
-Encoder: 1296 bytes k = 100 m = 20 : 219.429 usec, 590.624 MBps
-Decoder: 1296 bytes k = 100 : 211.237 usec, 613.529 MBps
+Encoder: 1296 bytes k = 100 m = 20 : 223.525 usec, 579.801 MBps
+Decoder: 1296 bytes k = 100 m = 20 : 209.481 usec, 618.671 MBps
 
-Encoder: 1296 bytes k = 100 m = 30 : 385.902 usec, 335.836 MBps
-Decoder: 1296 bytes k = 100 : 322.999 usec, 401.239 MBps
+Encoder: 1296 bytes k = 100 m = 30 : 372.737 usec, 347.699 MBps
+Decoder: 1296 bytes k = 100 m = 30 : 322.707 usec, 401.603 MBps
 
-Encoder: 1296 bytes k = 100 m = 40 : 444.709 usec, 291.426 MBps
-Decoder: 1296 bytes k = 100 : 430.666 usec, 300.929 MBps
+Encoder: 1296 bytes k = 100 m = 40 : 471.626 usec, 274.794 MBps
+Decoder: 1296 bytes k = 100 m = 40 : 434.762 usec, 298.094 MBps
 
-Encoder: 1296 bytes k = 100 m = 50 : 572.563 usec, 226.351 MBps
-Decoder: 1296 bytes k = 100 : 545.646 usec, 237.516 MBps
+Encoder: 1296 bytes k = 100 m = 50 : 592.751 usec, 218.642 MBps
+Decoder: 1296 bytes k = 100 m = 50 : 545.939 usec, 237.389 MBps
 ~~~
 
 Longhair Library Results:
