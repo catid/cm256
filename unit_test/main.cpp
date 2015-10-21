@@ -173,6 +173,43 @@ bool ExampleFileUsage()
     return blocks[0].Index == 0;
 }
 
+bool CheckMemSwap()
+{
+    unsigned char buffa[16 + 8 + 4 + 3];
+    memset(buffa, 1, sizeof(buffa));
+    unsigned char buffb[16 + 8 + 4 + 3];
+    memset(buffb, 2, sizeof(buffb));
+
+    gf256_memswap(buffa, buffb, (int)sizeof(buffa));
+
+    for (int i = 0; i < (int)sizeof(buffa); ++i)
+    {
+        if (buffa[i] != 2)
+        {
+            return false;
+        }
+        if (buffb[i] != 1)
+        {
+            return false;
+        }
+    }
+
+    gf256_memswap(buffa, buffb, (int)sizeof(buffa));
+
+    for (int i = 0; i < (int)sizeof(buffa); ++i)
+    {
+        if (buffa[i] != 1)
+        {
+            return false;
+        }
+        if (buffb[i] != 2)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 bool FinerPerfTimingTest()
 {
@@ -341,6 +378,12 @@ int main()
     if (!ExampleFileUsage())
     {
         exit(1);
+    }
+#endif
+#if 1
+    if (!CheckMemSwap())
+    {
+        exit(4);
     }
 #endif
 #if 1
