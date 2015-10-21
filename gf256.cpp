@@ -715,3 +715,66 @@ extern "C" void gf256_mul_mem(gf256_ctx* ctx, void * GF256_RESTRICT vz, const vo
         break;
     }
 }
+
+extern "C" void gf256_memswap(void * GF256_RESTRICT vx, void * GF256_RESTRICT vy, int bytes)
+{
+    GF256_M128 * GF256_RESTRICT x16 = reinterpret_cast<GF256_M128*>(vx);
+    GF256_M128 * GF256_RESTRICT y16 = reinterpret_cast<GF256_M128*>(vy);
+
+    // Handle blocks of 16 bytes
+    while (bytes >= 16)
+    {
+        GF256_M128 x0 = _mm_loadu_si128(x16);
+        GF256_M128 y0 = _mm_loadu_si128(y16);
+        _mm_storeu_si128(x16, y0);
+        _mm_storeu_si128(y16, x0);
+
+        bytes -= 16;
+        ++x16;
+        ++y16;
+    }
+
+    uint8_t * GF256_RESTRICT x1 = reinterpret_cast<uint8_t *>(x16);
+    uint8_t * GF256_RESTRICT y1 = reinterpret_cast<uint8_t *>(y16);
+
+    // Handle a block of 8 bytes
+    if (bytes >= 8)
+    {
+        uint64_t * GF256_RESTRICT x8 = reinterpret_cast<uint64_t *>(x1);
+        uint64_t * GF256_RESTRICT y8 = reinterpret_cast<uint64_t *>(y1);
+
+        uint64_t temp = *x8;
+        *x8 = *y8;
+        *y8 = temp;
+
+        x1 += 8;
+        y1 += 8;
+        bytes -= 8;
+    }
+
+    // Handle a block of 4 bytes
+    if (bytes >= 4)
+    {
+        uint32_t * GF256_RESTRICT x4 = reinterpret_cast<uint32_t *>(x1);
+        uint32_t * GF256_RESTRICT y4 = reinterpret_cast<uint32_t *>(y1);
+
+        uint32_t temp = *x4;
+        *x4 = *y4;
+        *y4 = temp;
+
+        x1 += 4;
+        y1 += 4;
+        bytes -= 4;
+    }
+
+    // Handle final bytes
+    uint8_t temp;
+    switch (bytes)
+    {
+    case 3: temp = x1[2]; x1[2] = y1[2]; y1[2] = temp;
+    case 2: temp = x1[1]; x1[1] = y1[1]; y1[1] = temp;
+    case 1: temp = x1[0]; x1[0] = y1[0]; y1[0] = temp;
+    default:
+        break;
+    }
+}

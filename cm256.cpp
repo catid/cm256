@@ -379,7 +379,7 @@ void Decoder::Decode()
     }
 
     // Fill matrix
-    uint8_t* elementPtr = matrix;
+    uint8_t* fillElement = matrix;
     for (int i = 0; i < RecoveryCount; ++i)
     {
         const uint8_t x_i = Recovery[i]->Index;
@@ -389,67 +389,67 @@ void Decoder::Decode()
             const uint8_t y_j = ErasuresIndices[j];
             const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_j);
 
-            *elementPtr++ = matrixElement;
+            *fillElement++ = matrixElement;
         }
-    }
-
-    // Initialize pivots to 0...255
-    uint8_t pivots[256];
-    for (int j = 0; j < Params.OriginalCount; ++j)
-    {
-        pivots[j] = static_cast<uint8_t>(j);
     }
 
     // TBD: Faster algorithms seem to exist for computing this inverse.
 
     // Gaussian elimination
     // Puts matrix into upper-triangular form
-    for (int j = 0; j < RecoveryCount; ++j)
+    uint8_t* elementPtr_j = matrix;
+    for (int j = 0; j < RecoveryCount; ++j, elementPtr_j += RecoveryCount + 1)
     {
-        // Hunt for pivot in column (guaranteed to find one)
-        for (int remainingIndex = j; remainingIndex < RecoveryCount; ++remainingIndex)
-        {
-            // Look up recovery row from pivots array
-            unsigned i = pivots[remainingIndex];
+        uint8_t* elementPtr_i = elementPtr_j;
 
-            // TBD: Find some way to avoid multiplication here?
-            uint8_t* elementPtr = matrix + i * RecoveryCount + j;
-            uint8_t matrixElement = *elementPtr;
+        // Get the block pointer
+        uint8_t* block_j = static_cast<uint8_t*>(Recovery[j]->Block);
+
+        // Hunt for pivot in column (guaranteed to find one)
+        for (int i = j; i < RecoveryCount; ++i, elementPtr_i += RecoveryCount)
+        {
+            uint8_t matrixElement = *elementPtr_i;
             if (matrixElement == 0)
             {
+                // Almost never happens
                 continue;
             }
-            ++elementPtr;
 
-            // Swap pivots
-            pivots[remainingIndex] = pivots[j];
-            pivots[j] = static_cast<uint8_t>(i);
+            // If we actually skipped a row (very rare),
+            // This is an important optimization: Since not finding a pivot right away is very rare,
+            // we can avoid maintaining a pivot array and we can avoid random-accesses to the matrix
+            // by handling the case of not immediately finding a pivot with a slow swap.
+            // This also makes the code a lot simpler and harder to hide bugs in.
+            if (i != j)
+            {
+                // Swap remaining matrix data
+                gf256_memswap(elementPtr_i + 1, elementPtr_j + 1, RecoveryCount - j - 1);
+                gf256_memswap(Recovery[i]->Block, block_j, Params.BlockBytes);
+            }
 
             // Set the index
-            Recovery[i]->Index = ErasuresIndices[j];
-
-            // Get the block pointer
-            uint8_t* block = static_cast<uint8_t*>(Recovery[i]->Block);
+            Recovery[j]->Index = ErasuresIndices[j];
 
             if (matrixElement != 1)
             {
                 // Divide remainder of row and its block by element
                 const uint8_t invMatrixElement = gf256_inv(&GF256Ctx, matrixElement);
-                gf256_mul_mem(&GF256Ctx, elementPtr, elementPtr, invMatrixElement, RecoveryCount - j - 1);
-                gf256_mul_mem(&GF256Ctx, block, block, invMatrixElement, Params.BlockBytes);
+                gf256_mul_mem(&GF256Ctx, elementPtr_j + 1, elementPtr_j + 1, invMatrixElement, RecoveryCount - j - 1);
+                gf256_mul_mem(&GF256Ctx, block_j, block_j, invMatrixElement, Params.BlockBytes);
             }
 
             // Remove it from all the other data
+            uint8_t* elementPtr_k = elementPtr_j;
             for (int k = j + 1; k < RecoveryCount; ++k)
             {
+                elementPtr_k += RecoveryCount;
+
                 // Look up row element for next remaining row
-                unsigned otheri = pivots[k];
-                uint8_t* otherElementPtr = matrix + otheri * RecoveryCount + j;
-                uint8_t otherMatrixElement = *otherElementPtr;
+                uint8_t otherMatrixElement = *elementPtr_k;
 
                 // Eliminate the element
-                gf256_muladd_mem(&GF256Ctx, otherElementPtr + 1, otherMatrixElement, elementPtr, RecoveryCount - j - 1);
-                gf256_muladd_mem(&GF256Ctx, Recovery[otheri]->Block, otherMatrixElement, block, Params.BlockBytes);
+                gf256_muladd_mem(&GF256Ctx, elementPtr_k + 1, otherMatrixElement, elementPtr_j + 1, RecoveryCount - j - 1);
+                gf256_muladd_mem(&GF256Ctx, Recovery[k]->Block, otherMatrixElement, block_j, Params.BlockBytes);
             }
 
             break;
@@ -458,23 +458,22 @@ void Decoder::Decode()
 
     // Back-substitute
     // Diagonalizes the matrix
+    elementPtr_j -= 2 * RecoveryCount;
     for (int j = RecoveryCount - 2; j >= 0; --j)
     {
+        elementPtr_j -= RecoveryCount;
+
         // Look up recovery row from pivots array
         // Get the block pointer
-        const uint8_t jIndex = pivots[j];
-        uint8_t* block = static_cast<uint8_t*>(Recovery[jIndex]->Block);
-        uint8_t* row = matrix + jIndex * RecoveryCount;
+        uint8_t* block = static_cast<uint8_t*>(Recovery[j]->Block);
 
         // For each uncleared row element,
         for (int k = RecoveryCount - 1; k > j; --k)
         {
-            // Grab matrix element
-            const uint8_t kIndex = pivots[k];
-            uint8_t matrixElement = row[k];
+            uint8_t matrixElement = elementPtr_j[k];
 
             // Eliminate the element
-            gf256_muladd_mem(&GF256Ctx, block, matrixElement, Recovery[kIndex]->Block, Params.BlockBytes);
+            gf256_muladd_mem(&GF256Ctx, block, matrixElement, Recovery[k]->Block, Params.BlockBytes);
         }
     }
 
@@ -513,7 +512,10 @@ extern "C" int cm256_decode(
     }
 
     Decoder state;
-    state.Initialize(params, blocks);
+    if (!state.Initialize(params, blocks))
+    {
+        return -5;
+    }
 
     // If nothing is erased,
     if (state.RecoveryCount <= 0)

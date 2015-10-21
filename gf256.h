@@ -194,6 +194,13 @@ static GF256_FORCE_INLINE void gf256_div_mem(gf256_ctx* ctx, void * GF256_RESTRI
 }
 
 
+//-----------------------------------------------------------------------------
+// Misc Operations
+
+// Swap two memory buffers in-place
+extern void gf256_memswap(void * GF256_RESTRICT vx, void * GF256_RESTRICT vy, int bytes);
+
+
 #ifdef __cplusplus
 }
 #endif

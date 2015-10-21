@@ -319,7 +319,7 @@ bool BulkPerfTesting()
                     double opusec = tsum.QuadPart * GetPerfFrequencyInverse() * 1000000.;
                     double mbps = (params.BlockBytes * params.OriginalCount / opusec);
 
-                    cout << "Decoder: " << blockBytes << " bytes k = " << originalCount << " : " << opusec << " usec, " << mbps << " MBps" << endl;
+                    cout << "Decoder: " << blockBytes << " bytes k = " << originalCount << " m = " << recoveryCount << " : " << opusec << " usec, " << mbps << " MBps" << endl;
                 }
 
                 if (!validateSolution(blocks, originalCount, blockBytes))
