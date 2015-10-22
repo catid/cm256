@@ -231,7 +231,7 @@ extern "C" int cm256_encode(
 //-----------------------------------------------------------------------------
 // Decoding
 
-struct Decoder
+struct CM256Decoder
 {
     // Encode parameters
     cm256_encoder_params Params;
@@ -257,7 +257,7 @@ struct Decoder
     void Decode();
 };
 
-bool Decoder::Initialize(cm256_encoder_params& params, cm256_block* blocks)
+bool CM256Decoder::Initialize(cm256_encoder_params& params, cm256_block* blocks)
 {
     Params = params;
 
@@ -312,7 +312,7 @@ bool Decoder::Initialize(cm256_encoder_params& params, cm256_block* blocks)
     return true;
 }
 
-void Decoder::DecodeM1()
+void CM256Decoder::DecodeM1()
 {
     // XOR all other blocks into the recovery block
     uint8_t* outBlock = static_cast<uint8_t*>(Recovery[0]->Block);
@@ -345,7 +345,7 @@ void Decoder::DecodeM1()
     Recovery[0]->Index = ErasuresIndices[0];
 }
 
-void Decoder::Decode()
+void CM256Decoder::Decode()
 {
     // Start the x_0 values arbitrarily from the original count.
     const uint8_t x_0 = static_cast<uint8_t>(Params.OriginalCount);
@@ -380,13 +380,13 @@ void Decoder::Decode()
 
     // Fill matrix
     uint8_t* fillElement = matrix;
-    for (int i = 0; i < RecoveryCount; ++i)
+    for (int recoveryIndex = 0; recoveryIndex < RecoveryCount; ++recoveryIndex)
     {
-        const uint8_t x_i = Recovery[i]->Index;
+        const uint8_t x_i = Recovery[recoveryIndex]->Index;
 
-        for (int j = 0; j < RecoveryCount; ++j)
+        for (int erasuresIndex = 0; erasuresIndex < RecoveryCount; ++erasuresIndex)
         {
-            const uint8_t y_j = ErasuresIndices[j];
+            const uint8_t y_j = ErasuresIndices[erasuresIndex];
             const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_j);
 
             *fillElement++ = matrixElement;
@@ -423,8 +423,13 @@ void Decoder::Decode()
             if (i != j)
             {
                 // Swap remaining matrix data
-                gf256_memswap(elementPtr_i + 1, elementPtr_j + 1, RecoveryCount - j - 1);
+                gf256_memswap(elementPtr_i, elementPtr_j, RecoveryCount - j);
                 gf256_memswap(Recovery[i]->Block, block_j, Params.BlockBytes);
+
+                // Swap indices
+                uint8_t temp = Recovery[i]->Index;
+                Recovery[i]->Index = Recovery[j]->Index;
+                Recovery[j]->Index = temp;
             }
 
             // Set the index
@@ -511,7 +516,7 @@ extern "C" int cm256_decode(
         return 0;
     }
 
-    Decoder state;
+    CM256Decoder state;
     if (!state.Initialize(params, blocks))
     {
         return -5;
