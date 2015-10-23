@@ -131,6 +131,14 @@ extern int cm256_encode(
     cm256_block* originals,      // Array of pointers to original blocks
     void* recoveryBlocks);       // Output recovery blocks end-to-end
 
+// Encode one block.
+// Note: This function does not validate input, use with care.
+extern void cm256_encode_block(
+    cm256_encoder_params params, // Encoder parameters
+    cm256_block* originals,      // Array of pointers to original blocks
+    int recoveryBlockIndex,      // Return value from cm256_get_recovery_block_index()
+    void* recoveryBlock);        // Output recovery block
+
 /*
  * Cauchy MDS GF(256) decode
  *

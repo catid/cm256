@@ -144,6 +144,63 @@ static GF256_FORCE_INLINE unsigned char GetMatrixElement(unsigned char x_i, unsi
 //-----------------------------------------------------------------------------
 // Encoding
 
+extern "C" void cm256_encode_block(
+    cm256_encoder_params params, // Encoder parameters
+    cm256_block* originals,      // Array of pointers to original blocks
+    int recoveryBlockIndex,      // Return value from cm256_get_recovery_block_index()
+    void* recoveryBlock)         // Output recovery block
+{
+    // If only one block of input data,
+    if (params.OriginalCount == 1)
+    {
+        // No meaningful operation here, degenerate to outputting the same data each time.
+
+        memcpy(recoveryBlock, originals[0].Block, params.BlockBytes);
+        return;
+    }
+    // else OriginalCount >= 2:
+
+    // Unroll first row of recovery matrix:
+    // The matrix we generate for the first row is all ones,
+    // so it is merely a parity of the original data.
+    if (recoveryBlockIndex == params.OriginalCount)
+    {
+        gf256_addset_mem(recoveryBlock, originals[0].Block, originals[1].Block, params.BlockBytes);
+        for (int j = 2; j < params.OriginalCount; ++j)
+        {
+            gf256_add_mem(recoveryBlock, originals[j].Block, params.BlockBytes);
+        }
+        return;
+    }
+
+    // TBD: Faster algorithms seem to exist for computing this matrix-vector product.
+
+    // Start the x_0 values arbitrarily from the original count.
+    const uint8_t x_0 = static_cast<uint8_t>(params.OriginalCount);
+
+    // For other rows:
+    {
+        const uint8_t x_i = static_cast<uint8_t>(recoveryBlockIndex);
+
+        // Unroll first operation for speed
+        {
+            const uint8_t y_0 = 0;
+            const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_0);
+
+            gf256_mul_mem(&GF256Ctx, recoveryBlock, originals[0].Block, matrixElement, params.BlockBytes);
+        }
+
+        // For each original data column,
+        for (int j = 1; j < params.OriginalCount; ++j)
+        {
+            const uint8_t y_j = static_cast<uint8_t>(j);
+            const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_j);
+
+            gf256_muladd_mem(&GF256Ctx, recoveryBlock, matrixElement, originals[j].Block, params.BlockBytes);
+        }
+    }
+}
+
 extern "C" int cm256_encode(
     cm256_encoder_params params, // Encoder params
     cm256_block* originals,      // Array of pointers to original blocks
@@ -171,57 +228,9 @@ extern "C" int cm256_encode(
 
     uint8_t* recoveryBlock = static_cast<uint8_t*>(recoveryBlocks);
 
-    // If only one block of input data,
-    if (params.OriginalCount == 1)
+    for (int block = 0; block < params.OriginalCount; ++block, recoveryBlock += params.BlockBytes)
     {
-        // No meaningful operation here, degenerate to outputting the same data each time.
-
-        for (int i = 0; i < params.RecoveryCount; ++i)
-        {
-            memcpy(recoveryBlock + i * params.BlockBytes, originals[0].Block, params.BlockBytes);
-        }
-
-        return 0;
-    }
-    // else OriginalCount >= 2:
-
-    // Unroll first row of recovery matrix:
-    // The matrix we generate for the first row is all ones,
-    // so it is merely a parity of the original data.
-    gf256_addset_mem(recoveryBlock, originals[0].Block, originals[1].Block, params.BlockBytes);
-    for (int j = 2; j < params.OriginalCount; ++j)
-    {
-        gf256_add_mem(recoveryBlock, originals[j].Block, params.BlockBytes);
-    }
-
-    // TBD: Faster algorithms seem to exist for computing this matrix-vector product.
-
-    // Start the x_0 values arbitrarily from the original count.
-    const uint8_t x_0 = static_cast<uint8_t>(params.OriginalCount);
-
-    // For each remaining recovery block row,
-    for (int i = 1; i < params.RecoveryCount; ++i)
-    {
-        const uint8_t x_i = static_cast<uint8_t>(x_0 + i);
-
-        recoveryBlock += params.BlockBytes;
-
-        // Unroll first operation for speed
-        {
-            const uint8_t y_0 = 0;
-            const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_0);
-
-            gf256_mul_mem(&GF256Ctx, recoveryBlock, originals[0].Block, matrixElement, params.BlockBytes);
-        }
-
-        // For each original data column,
-        for (int j = 1; j < params.OriginalCount; ++j)
-        {
-            const uint8_t y_j = static_cast<uint8_t>(j);
-            const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_j);
-
-            gf256_muladd_mem(&GF256Ctx, recoveryBlock, matrixElement, originals[j].Block, params.BlockBytes);
-        }
+        cm256_encode_block(params, originals, (params.OriginalCount + block), recoveryBlock);
     }
 
     return 0;
