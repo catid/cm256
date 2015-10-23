@@ -228,7 +228,7 @@ extern "C" int cm256_encode(
 
     uint8_t* recoveryBlock = static_cast<uint8_t*>(recoveryBlocks);
 
-    for (int block = 0; block < params.OriginalCount; ++block, recoveryBlock += params.BlockBytes)
+    for (int block = 0; block < params.RecoveryCount; ++block, recoveryBlock += params.BlockBytes)
     {
         cm256_encode_block(params, originals, (params.OriginalCount + block), recoveryBlock);
     }
