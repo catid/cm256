@@ -2,8 +2,8 @@
 Fast GF(256) Cauchy MDS Block Erasure Codec in C
 
 cm256 is a simple library for erasure codes.  From given data it generates
-redundant data that can be used to recover the originals.  It is extremely fast, perhaps
-the fastest software implementation available for erasure codes < 256 blocks long.
+redundant data that can be used to recover the originals.
+
 It is roughly 2x faster than Longhair, and CM256 supports input data that is not a multiple of 8 bytes.
 
 Currently only Visual Studio 2013 is supported, though other versions of MSVC may work.
@@ -207,6 +207,19 @@ For m=4, CM256 is 3x faster in this case.  Longhair could use more tuning.  Back
 For m=5...30, CM256 performance is not quite 2x faster, maybe 1.7x or so.
 
 For m>30, CM256 is at least 2x faster.
+
+
+#### Comparisons with Other Libraries
+
+The approach taken in CM256 is similar to the Intel Storage Acceleration Library (ISA-L) available here:
+
+https://01.org/intel%C2%AE-storage-acceleration-library-open-source-version/downloads
+
+ISA-L more aggressively optimizes the matrix multiplication operation, which is the most expensive step of encoding and decoding.  Therefore, it should be faster in practice.
+
+CM256 takes better advantage of the m=1 case and the first recovery symbol, which is also possible with the Vandermonde matrices supported by ISA-L.  But these cases can be similarly optimized better by software using ISA-L, gaining the benefits of both.
+
+CM256 performs matrix inversion simultaneously with the solution, but this is not a huge improvement in performance.
 
 
 #### Credits
