@@ -267,7 +267,7 @@ struct CM256Decoder
     void Decode();
 
     // Generate the LU decomposition of the matrix
-    void GenerateLUDecomposition(uint8_t* matrix);
+    void GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, uint8_t* matrix_U);
 };
 
 bool CM256Decoder::Initialize(cm256_encoder_params& params, cm256_block* blocks)
@@ -359,11 +359,14 @@ void CM256Decoder::DecodeM1()
 }
 
 // Generate the LU decomposition of the matrix
-void CM256Decoder::GenerateLUDecomposition(uint8_t* matrix)
+void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, uint8_t* matrix_U)
 {
     // Schur-type-direct-Cauchy algorithm 2.5 from
     // "Pivoting and Backward Stability of Fast Algorithms for Solving Cauchy Linear Equations"
     // T. Boros, T. Kailath, V. Olshevsky
+    // Modified for practical use.  I folded the diagonal parts of U/L matrices into the
+    // diagonal one to reduce the number of multiplications to perform against the input data,
+    // and organized the triangle matrices in memory to allow for faster SSE3 GF multiplications.
 
     // Matrix size NxN
     const int N = RecoveryCount;
@@ -376,29 +379,8 @@ void CM256Decoder::GenerateLUDecomposition(uint8_t* matrix)
         b[i] = 1;
     }
 
-    // L = eye(N,N), U = zeros(N,N)
-    for (int i = 0; i < N; ++i)
-    {
-        for (int j = 0; j < N; ++j)
-        {
-            if (i == j)
-            {
-                matrix[i * N + j] = 1;
-            }
-            else
-            {
-                matrix[i * N + j] = 0;
-            }
-        }
-    }
-
-    // TODO: This is not directly useful - The result needs to be re-worked into a conventional LU matrix
-    // so that solution can be performed in exactly N^2 mul_mem operations.  Currently it requires more than
-    // that.  Algorithm 2.3 seems like it would work, but this algorithm seems to take advantage of some
-    // matrix structure that that one does not.  Maybe working backwards a bit might result in an algorithm
-    // that is faster than both.
-
-    uint8_t diag_D[256], diag_U[256], diag_L[256];
+    // Start the x_0 values arbitrarily from the original count.
+    const uint8_t x_0 = static_cast<uint8_t>(Params.OriginalCount);
 
     for (int k = 0; k < N - 1; ++k)
     {
@@ -407,15 +389,21 @@ void CM256Decoder::GenerateLUDecomposition(uint8_t* matrix)
 
         // Computing the k-th row of L and U
         const uint8_t D_kk = gf256_add(x_k, y_k);
+        const uint8_t tempSum = gf256_add(x_k, y_k);
+        const uint8_t L_kk = gf256_div(&GF256Ctx, g[k], tempSum);
+        const uint8_t U_kk = gf256_div(&GF256Ctx, b[k], tempSum);
 
-        diag_D[k] = D_kk;
+        // TBD: Does math work out here?
+        diag_D[k] = gf256_mul(&GF256Ctx,
+            gf256_add(y_k, x_0), // Modified Cauchy matrix
+            gf256_mul(&GF256Ctx,
+                D_kk, // Diagonal
+                gf256_mul(&GF256Ctx,
+                    L_kk, // Fold L/U diagonals into diagonal
+                    U_kk)));
 
-        const uint8_t L_kk = gf256_div(&GF256Ctx, g[k], gf256_add(x_k, y_k));
-        const uint8_t U_kk = gf256_div(&GF256Ctx, b[k], gf256_add(x_k, y_k));
-
-        diag_L[k] = L_kk;
-        diag_U[k] = U_kk;
-
+        uint8_t* row_L = matrix_L;
+        uint8_t* row_U = matrix_U;
         for (int j = k + 1; j < N; ++j)
         {
             const uint8_t x_j = Recovery[j]->Index;
@@ -424,9 +412,12 @@ void CM256Decoder::GenerateLUDecomposition(uint8_t* matrix)
             const uint8_t L_jk = gf256_div(&GF256Ctx, g[j], gf256_add(x_j, y_k));
             const uint8_t U_kj = gf256_div(&GF256Ctx, b[j], gf256_add(x_k, y_j));
 
-            matrix[j * N + k] = L_jk;
-            matrix[k * N + j] = U_kj;
+            *matrix_L++ = L_jk;
+            *matrix_U++ = U_kj;
         }
+        const int count = N - (k + 1);
+        gf256_div_mem(&GF256Ctx, row_L, row_L, L_kk, count);
+        gf256_div_mem(&GF256Ctx, row_U, row_U, U_kk, count);
 
         // Computing the new generators
         for (int j = k + 1; j < N; ++j)
@@ -445,13 +436,7 @@ void CM256Decoder::GenerateLUDecomposition(uint8_t* matrix)
     const uint8_t x_n = Recovery[N - 1]->Index;
     const uint8_t y_n = ErasuresIndices[N - 1];
 
-    const uint8_t D_nn = gf256_inv(&GF256Ctx, gf256_add(x_n, y_n));
-
-    diag_D[N - 1] = D_nn;
-    diag_L[N - 1] = g[N - 1];
-    diag_U[N - 1] = b[N - 1];
-
-    diag_U[255] = 0;
+    diag_D[N - 1] = gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, g[N - 1], b[N - 1]), gf256_add(x_n, y_n));
 }
 
 void CM256Decoder::Decode()
@@ -479,8 +464,6 @@ void CM256Decoder::Decode()
         }
     }
 
-    // TBD: Store matrix column-first instead.
-
     // Allocate matrix
     static const int StackAllocSize = 2048;
     uint8_t stackMatrix[StackAllocSize];
@@ -492,48 +475,63 @@ void CM256Decoder::Decode()
         matrix = dynamicMatrix;
     }
 
-    GenerateLUDecomposition(matrix);
+    /*
+        Compute matrix decomposition:
+
+            G = L * D * U
+
+        L is lower-triangular, diagonal is all ones.
+        D is a diagonal matrix.
+        U is upper-triangular, diagonal is all ones.
+    */
+    uint8_t* matrix_L = matrix;
+    uint8_t* diag_D = matrix_L + (N + 1) * N / 2;
+    uint8_t* matrix_U = diag_D + N;
+    GenerateLDUDecomposition(matrix_L, diag_D, matrix_U);
 
     /*
-        Eliminate lower triangle first, including the diagonal,
-        starting from upper left corner.
+        Eliminate lower left triangle.
     */
-    uint8_t* start_row = matrix;
-    for (int j = 0; j < N; ++j, start_row += N + 1)
+    // For each column,
+    for (int j = 0; j < N - 1; ++j)
     {
-        void* block_j = Recovery[j]->Block;
-        const uint8_t c_jj = *start_row;
+        const void* block_j = Recovery[j]->Block;
 
-        Recovery[j]->Index = ErasuresIndices[j];
-
-        gf256_div_mem(&GF256Ctx, block_j, block_j, c_jj, Params.BlockBytes);
-
-        uint8_t* row = start_row;
+        // For each row,
         for (int i = j + 1; i < N; ++i)
         {
             void* block_i = Recovery[i]->Block;
-            row += N;
-            const uint8_t c_ij = *row;
+            const uint8_t c_ij = *matrix_L++; // Matrix elements are stored column-first.
 
             gf256_muladd_mem(&GF256Ctx, block_i, c_ij, block_j, Params.BlockBytes);
         }
     }
 
     /*
+        Eliminate diagonal.
+    */
+    for (int i = 0; i < N; ++i)
+    {
+        void* block = Recovery[i]->Block;
+
+        Recovery[i]->Index = ErasuresIndices[i];
+
+        gf256_div_mem(&GF256Ctx, block, block, diag_D[i], Params.BlockBytes);
+    }
+
+    /*
         Eliminate upper right triangle.
     */
-    for (int j = N - 1; j >= 0; --j)
+    for (int i = 0; i < N - 1; ++i)
     {
-        void* block_j = Recovery[j]->Block;
+        const void* block_i = Recovery[i + 1]->Block;
 
-        uint8_t* row = matrix + j;
-        for (int i = 0; i < j; ++i, row += N)
+        for (int j = i + 1; j < N; ++j)
         {
-            void* block_i = Recovery[i]->Block;
+            void* block_j = Recovery[j]->Block;
+            const uint8_t c_ij = *matrix_U++; // Matrix elements are stored row-first.
 
-            const uint8_t c_ij = *row;
-
-            gf256_muladd_mem(&GF256Ctx, block_i, c_ij, block_j, Params.BlockBytes);
+            gf256_muladd_mem(&GF256Ctx, block_j, c_ij, block_i, Params.BlockBytes);
         }
     }
 
