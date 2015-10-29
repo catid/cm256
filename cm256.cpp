@@ -524,14 +524,14 @@ void CM256Decoder::Decode()
     */
     for (int i = 0; i < N - 1; ++i)
     {
-        const void* block_i = Recovery[i + 1]->Block;
+        void* block_i = Recovery[i]->Block;
 
         for (int j = i + 1; j < N; ++j)
         {
-            void* block_j = Recovery[j]->Block;
+            const void* block_j = Recovery[j]->Block;
             const uint8_t c_ij = *matrix_U++; // Matrix elements are stored row-first.
 
-            gf256_muladd_mem(&GF256Ctx, block_j, c_ij, block_i, Params.BlockBytes);
+            gf256_muladd_mem(&GF256Ctx, block_i, c_ij, block_j, Params.BlockBytes);
         }
     }
 
