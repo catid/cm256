@@ -408,10 +408,15 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
             // L_jk = g[j] / (x_j + y_k)
             // U_kj = b[j] * (x_0 + y_j) / (x_k + y_j)
             const uint8_t L_jk = gf256_div(&GF256Ctx, g[j], gf256_add(x_j, y_k));
-            const uint8_t U_kj = gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, b[j], gf256_add(x_0, y_j)), gf256_add(x_k, y_j));
+            const uint8_t U_kj = gf256_mul(&GF256Ctx, b[j], gf256_div(&GF256Ctx, gf256_add(x_0, y_j), gf256_add(x_k, y_j)));
 
             *matrix_L++ = L_jk;
             *matrix_U++ = U_kj;
+
+            // g[j] = g[j] * (x_j + x_k) / (x_j + y_k)
+            // b[j] = b[j] * (y_j + y_k) / (y_j + x_k)
+            g[j] = gf256_mul(&GF256Ctx, g[j], gf256_div(&GF256Ctx, gf256_add(x_j, x_k), gf256_add(x_j, y_k)));
+            b[j] = gf256_mul(&GF256Ctx, b[j], gf256_div(&GF256Ctx, gf256_add(y_j, y_k), gf256_add(y_j, x_k)));
         }
 
         // Do these row/column divisions in bulk for speed.
@@ -420,31 +425,19 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
         const int count = N - (k + 1);
         gf256_div_mem(&GF256Ctx, row_L, row_L, L_kk, count);
         gf256_div_mem(&GF256Ctx, row_U, row_U, U_kk, count);
-
-        // Computing the new generators
-        for (int j = k + 1; j < N; ++j)
-        {
-            const uint8_t x_j = Recovery[j]->Index;
-            const uint8_t y_j = ErasuresIndices[j];
-
-            // g[j] = g[j] * (x_j + x_k) / (x_j + y_k)
-            // b[j] = b[j] * (y_j + y_k) / (y_j + x_k)
-            g[j] = gf256_mul(&GF256Ctx, g[j], gf256_div(&GF256Ctx, gf256_add(x_j, x_k), gf256_add(x_j, y_k)));
-            b[j] = gf256_mul(&GF256Ctx, b[j], gf256_div(&GF256Ctx, gf256_add(y_j, y_k), gf256_add(y_j, x_k)));
-        }
     }
 
     const uint8_t x_n = Recovery[N - 1]->Index;
     const uint8_t y_n = ErasuresIndices[N - 1];
 
-    // diag_D[N-1] = (g[N-1] * b[N-1] * (x_0 + y_n)) / (x_n + y_n)
-    diag_D[N - 1] = gf256_mul(&GF256Ctx,
-        gf256_div(&GF256Ctx,
-            gf256_mul(&GF256Ctx,
-                g[N - 1],
-                b[N - 1]),
-            gf256_add(x_n, y_n)),
-        gf256_add(x_0, y_n));
+    // D_nn = 1 / (x_n + y_n)
+    // L_nn = g[N-1]
+    // U_nn = b[N-1] * (x_0 + y_n)
+    const uint8_t L_nn = g[N - 1];
+    const uint8_t U_nn = gf256_mul(&GF256Ctx, b[N - 1], gf256_add(x_0, y_n));
+
+    // diag_D[N-1] = L_nn * D_nn * U_nn
+    diag_D[N - 1] = gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, L_nn, U_nn), gf256_add(x_n, y_n));
 }
 
 void CM256Decoder::Decode()
