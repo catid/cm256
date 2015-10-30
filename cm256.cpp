@@ -387,21 +387,17 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
         const uint8_t x_k = Recovery[k]->Index;
         const uint8_t y_k = ErasuresIndices[k];
 
-        // Computing the k-th row of L and U
+        // D_kk = (x_k + y_k)
+        // L_kk = g[k] / (x_k + y_k)
+        // U_kk = b[k] * (x_0 + y_k) / (x_k + y_k)
         const uint8_t D_kk = gf256_add(x_k, y_k);
-        const uint8_t tempSum = gf256_add(x_k, y_k);
-        const uint8_t L_kk = gf256_div(&GF256Ctx, g[k], tempSum);
-        const uint8_t U_kk = gf256_div(&GF256Ctx, b[k], tempSum);
+        const uint8_t L_kk = gf256_div(&GF256Ctx, g[k], D_kk);
+        const uint8_t U_kk = gf256_mul(&GF256Ctx, gf256_div(&GF256Ctx, b[k], D_kk), gf256_add(x_0, y_k));
 
-        // TBD: Does math work out here?
-        diag_D[k] = gf256_mul(&GF256Ctx,
-            gf256_add(y_k, x_0), // Modified Cauchy matrix
-            gf256_mul(&GF256Ctx,
-                D_kk, // Diagonal
-                gf256_mul(&GF256Ctx,
-                    L_kk, // Fold L/U diagonals into diagonal
-                    U_kk)));
+        // diag_D[k] = D_kk * L_kk * U_kk
+        diag_D[k] = gf256_mul(&GF256Ctx, D_kk, gf256_mul(&GF256Ctx, L_kk, U_kk));
 
+        // Computing the k-th row of L and U
         uint8_t* row_L = matrix_L;
         uint8_t* row_U = matrix_U;
         for (int j = k + 1; j < N; ++j)
@@ -409,12 +405,18 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
             const uint8_t x_j = Recovery[j]->Index;
             const uint8_t y_j = ErasuresIndices[j];
 
+            // L_jk = g[j] / (x_j + y_k)
+            // U_kj = b[j] * (x_0 + y_j) / (x_k + y_j)
             const uint8_t L_jk = gf256_div(&GF256Ctx, g[j], gf256_add(x_j, y_k));
-            const uint8_t U_kj = gf256_div(&GF256Ctx, b[j], gf256_add(x_k, y_j));
+            const uint8_t U_kj = gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, b[j], gf256_add(x_0, y_j)), gf256_add(x_k, y_j));
 
             *matrix_L++ = L_jk;
             *matrix_U++ = U_kj;
         }
+
+        // Do these row/column divisions in bulk for speed.
+        // L_jk /= L_kk
+        // U_kj /= L_kk
         const int count = N - (k + 1);
         gf256_div_mem(&GF256Ctx, row_L, row_L, L_kk, count);
         gf256_div_mem(&GF256Ctx, row_U, row_U, U_kk, count);
@@ -425,18 +427,24 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
             const uint8_t x_j = Recovery[j]->Index;
             const uint8_t y_j = ErasuresIndices[j];
 
-            const uint8_t g_jk = gf256_div(&GF256Ctx, gf256_add(x_j, x_k), gf256_add(x_j, y_k));
-            const uint8_t b_jk = gf256_div(&GF256Ctx, gf256_add(y_j, y_k), gf256_add(y_j, x_k));
-
-            g[j] = gf256_mul(&GF256Ctx, g[j], g_jk);
-            b[j] = gf256_mul(&GF256Ctx, b[j], b_jk);
+            // g[j] = g[j] * (x_j + x_k) / (x_j + y_k)
+            // b[j] = b[j] * (y_j + y_k) / (y_j + x_k)
+            g[j] = gf256_mul(&GF256Ctx, g[j], gf256_div(&GF256Ctx, gf256_add(x_j, x_k), gf256_add(x_j, y_k)));
+            b[j] = gf256_mul(&GF256Ctx, b[j], gf256_div(&GF256Ctx, gf256_add(y_j, y_k), gf256_add(y_j, x_k)));
         }
     }
 
     const uint8_t x_n = Recovery[N - 1]->Index;
     const uint8_t y_n = ErasuresIndices[N - 1];
 
-    diag_D[N - 1] = gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, g[N - 1], b[N - 1]), gf256_add(x_n, y_n));
+    // diag_D[N-1] = (g[N-1] * b[N-1] * (x_0 + y_n)) / (x_n + y_n)
+    diag_D[N - 1] = gf256_mul(&GF256Ctx,
+        gf256_div(&GF256Ctx,
+            gf256_mul(&GF256Ctx,
+                g[N - 1],
+                b[N - 1]),
+            gf256_add(x_n, y_n)),
+        gf256_add(x_0, y_n));
 }
 
 void CM256Decoder::Decode()
@@ -469,9 +477,10 @@ void CM256Decoder::Decode()
     uint8_t stackMatrix[StackAllocSize];
     uint8_t* dynamicMatrix = nullptr;
     uint8_t* matrix = stackMatrix;
-    if (N * N > StackAllocSize)
+    const int requiredSpace = N * N;
+    if (requiredSpace > StackAllocSize)
     {
-        dynamicMatrix = new uint8_t[N * N];
+        dynamicMatrix = new uint8_t[requiredSpace];
         matrix = dynamicMatrix;
     }
 
@@ -485,7 +494,7 @@ void CM256Decoder::Decode()
         U is upper-triangular, diagonal is all ones.
     */
     uint8_t* matrix_L = matrix;
-    uint8_t* diag_D = matrix_L + (N + 1) * N / 2;
+    uint8_t* diag_D = matrix_L + (N - 1) * N / 2;
     uint8_t* matrix_U = diag_D + N;
     GenerateLDUDecomposition(matrix_L, diag_D, matrix_U);
 
