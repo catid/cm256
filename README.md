@@ -156,6 +156,7 @@ Decoder: 1296 bytes k = 100 m = 40 : 434.762 usec, 298.094 MBps
 Encoder: 1296 bytes k = 100 m = 50 : 592.751 usec, 218.642 MBps
 Decoder: 1296 bytes k = 100 m = 50 : 545.939 usec, 237.389 MBps
 ~~~
+(These performance numbers are out of date and not well calibrated - Decoding now takes the same time as encoding within a few microseconds thanks to the new matrix solver.)
 
 Longhair Library Results:
 
@@ -217,9 +218,11 @@ https://01.org/intel%C2%AE-storage-acceleration-library-open-source-version/down
 
 ISA-L more aggressively optimizes the matrix multiplication operation, which is the most expensive step of encoding and decoding.  Therefore, it should be faster in practice.
 
-CM256 takes better advantage of the m=1 case and the first recovery symbol, which is also possible with the Vandermonde matrices supported by ISA-L.  But these cases can be similarly optimized better by software using ISA-L, gaining the benefits of both.
+CM256 takes better advantage of the m=1 case and the first recovery symbol, which is also possible with the Vandermonde matrices supported by ISA-L.
 
-CM256 performs matrix inversion simultaneously with the solution, but this is not a huge improvement in performance.
+ISA-L uses a O(N^3) Gaussian elimination solver for decoding.  The CM256 decoder solves the linear system using a fast O(N^2) LDU-decomposition algorithm from "Pivoting and Backward Stability of Fast Algorithms for Solving Cauchy Linear Equations" (T. Boros, T. Kailath, V. Olshevsky), which was optimized for efficient practical memory access times.
+
+In terms of decoding performance, the advantage may be to this library.
 
 
 #### Credits
