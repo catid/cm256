@@ -29,6 +29,11 @@
 #include "gf256.h"
 
 
+// Context object for GF(256) math
+GF256_ALIGNED gf256_ctx GF256Ctx;
+static bool Initialized = false;
+
+
 //-----------------------------------------------------------------------------
 // Generator Polynomial
 
@@ -39,15 +44,17 @@ static const uint8_t GF256_GEN_POLY[GF256_GEN_POLY_COUNT] = {
     0xb8, 0xc3, 0xc6, 0xd4, 0xe1, 0xe7, 0xf3, 0xfa,
 };
 
+static const int DefaultPolynomialIndex = 3;
+
 // Select which polynomial to use
-static void gf255_poly_init(gf256_ctx* ctx, int polynomialIndex)
+static void gf255_poly_init(int polynomialIndex)
 {
     if (polynomialIndex < 0 || polynomialIndex >= GF256_GEN_POLY_COUNT)
     {
         polynomialIndex = 0;
     }
 
-    ctx->Polynomial = (GF256_GEN_POLY[polynomialIndex] << 1) | 1;
+    GF256Ctx.Polynomial = (GF256_GEN_POLY[polynomialIndex] << 1) | 1;
 }
 
 
@@ -55,11 +62,11 @@ static void gf255_poly_init(gf256_ctx* ctx, int polynomialIndex)
 // Exponential and Log Tables
 
 // Construct EXP and LOG tables from polynomial
-static void gf256_explog_init(gf256_ctx* ctx)
+static void gf256_explog_init()
 {
-    unsigned poly = ctx->Polynomial;
-    uint8_t* exptab = ctx->GF256_EXP_TABLE;
-    uint16_t* logtab = ctx->GF256_LOG_TABLE;
+    unsigned poly = GF256Ctx.Polynomial;
+    uint8_t* exptab = GF256Ctx.GF256_EXP_TABLE;
+    uint16_t* logtab = GF256Ctx.GF256_LOG_TABLE;
 
     logtab[0] = 512;
     exptab[0] = 1;
@@ -93,11 +100,11 @@ static void gf256_explog_init(gf256_ctx* ctx)
 // Multiply and Divide Tables
 
 // Initialize MUL and DIV tables using LOG and EXP tables
-static void gf256_muldiv_init(gf256_ctx* ctx)
+static void gf256_muldiv_init()
 {
     // Allocate table memory 65KB x 2
-    uint8_t* m = ctx->GF256_MUL_TABLE;
-    uint8_t* d = ctx->GF256_DIV_TABLE;
+    uint8_t* m = GF256Ctx.GF256_MUL_TABLE;
+    uint8_t* d = GF256Ctx.GF256_DIV_TABLE;
 
     // Unroll y = 0 subtable
     for (int x = 0; x < 256; ++x)
@@ -109,7 +116,7 @@ static void gf256_muldiv_init(gf256_ctx* ctx)
     for (int y = 1; y < 256; ++y)
     {
         // Calculate log(y) for mult and 255 - log(y) for div
-        const uint8_t log_y = static_cast<uint8_t>(ctx->GF256_LOG_TABLE[y]);
+        const uint8_t log_y = static_cast<uint8_t>(GF256Ctx.GF256_LOG_TABLE[y]);
         const uint8_t log_yn = 255 - log_y;
 
         // Next subtable
@@ -123,10 +130,10 @@ static void gf256_muldiv_init(gf256_ctx* ctx)
         // Calculate x * y, x / y
         for (int x = 1; x < 256; ++x)
         {
-            uint16_t log_x = ctx->GF256_LOG_TABLE[x];
+            uint16_t log_x = GF256Ctx.GF256_LOG_TABLE[x];
 
-            m[x] = ctx->GF256_EXP_TABLE[log_x + log_y];
-            d[x] = ctx->GF256_EXP_TABLE[log_x + log_yn];
+            m[x] = GF256Ctx.GF256_EXP_TABLE[log_x + log_y];
+            d[x] = GF256Ctx.GF256_EXP_TABLE[log_x + log_yn];
         }
     }
 }
@@ -136,11 +143,11 @@ static void gf256_muldiv_init(gf256_ctx* ctx)
 // Inverse Table
 
 // Initialize INV table using DIV table
-static void gf256_inv_init(gf256_ctx* ctx)
+static void gf256_inv_init()
 {
     for (int x = 0; x < 256; ++x)
     {
-        ctx->GF256_INV_TABLE[x] = gf256_div(ctx, 1, static_cast<uint8_t>( x ));
+        GF256Ctx.GF256_INV_TABLE[x] = gf256_div(1, static_cast<uint8_t>(x));
     }
 }
 
@@ -237,7 +244,7 @@ static void gf256_inv_init(gf256_ctx* ctx)
 */
 
 // Initialize the MM256 tables using gf256_mul()
-static void gf256_muladd_mem_init(gf256_ctx* ctx)
+static void gf256_muladd_mem_init()
 {
     for (int y = 0; y < 256; ++y)
     {
@@ -246,8 +253,8 @@ static void gf256_muladd_mem_init(gf256_ctx* ctx)
         // TABLE_LO_Y maps 0..15 to 8-bit partial product based on y.
         for (unsigned char x = 0; x < 16; ++x)
         {
-            lo[x] = gf256_mul(ctx, x, static_cast<uint8_t>( y ));
-            hi[x] = gf256_mul(ctx, x << 4, static_cast<uint8_t>( y ));
+            lo[x] = gf256_mul(x, static_cast<uint8_t>( y ));
+            hi[x] = gf256_mul(x << 4, static_cast<uint8_t>( y ));
         }
 
         const GF256_M128 table_lo = _mm_set_epi8(
@@ -256,8 +263,8 @@ static void gf256_muladd_mem_init(gf256_ctx* ctx)
         const GF256_M128 table_hi = _mm_set_epi8(
             hi[15], hi[14], hi[13], hi[12], hi[11], hi[10], hi[9], hi[8],
             hi[7], hi[6], hi[5], hi[4], hi[3], hi[2], hi[1], hi[0]);
-        _mm_store_si128(ctx->MM256_TABLE_LO_Y + y, table_lo);
-        _mm_store_si128(ctx->MM256_TABLE_HI_Y + y, table_hi);
+        _mm_store_si128(GF256Ctx.MM256_TABLE_LO_Y + y, table_lo);
+        _mm_store_si128(GF256Ctx.MM256_TABLE_HI_Y + y, table_hi);
     }
 }
 
@@ -271,29 +278,32 @@ static bool IsLittleEndian()
     return 0x01020304 == *reinterpret_cast<uint32_t*>(LittleEndianTestData);
 }
 
-extern "C" int gf256_init_(gf256_ctx* ctx, int polynomialIndex, int version)
+extern "C" int gf256_init_(int version)
 {
     if (version != GF256_VERSION)
     {
         // User's header does not match library version.
         return -1;
     }
+
+    // Avoid multiple initialization
+    if (Initialized)
+    {
+        return 0;
+    }
+    Initialized = true;
+
     if (!IsLittleEndian())
     {
         // Architecture is not supported (code won't work without mods).
         return -2;
     }
-    if (ctx == nullptr || ((uintptr_t)ctx & 15) != 0)
-    {
-        // Context object must be aligned in memory.  Read comments in header.
-        return -3;
-    }
 
-    gf255_poly_init(ctx, polynomialIndex);
-    gf256_explog_init(ctx);
-    gf256_muldiv_init(ctx);
-    gf256_inv_init(ctx);
-    gf256_muladd_mem_init(ctx);
+    gf255_poly_init(DefaultPolynomialIndex);
+    gf256_explog_init();
+    gf256_muldiv_init();
+    gf256_inv_init();
+    gf256_muladd_mem_init();
 
     return 0;
 }
@@ -541,7 +551,7 @@ extern "C" void gf256_addset_mem(void * GF256_RESTRICT vz, const void * GF256_RE
     }
 }
 
-extern "C" void gf256_muladd_mem(gf256_ctx* ctx, void * GF256_RESTRICT vz, uint8_t y,
+extern "C" void gf256_muladd_mem(void * GF256_RESTRICT vz, uint8_t y,
                                  const void * GF256_RESTRICT vx, int bytes)
 {
     // Use a single if-statement to handle special cases
@@ -555,8 +565,8 @@ extern "C" void gf256_muladd_mem(gf256_ctx* ctx, void * GF256_RESTRICT vz, uint8
     }
 
     // Partial product tables; see above
-    const GF256_M128 table_lo_y = _mm_load_si128(ctx->MM256_TABLE_LO_Y + y);
-    const GF256_M128 table_hi_y = _mm_load_si128(ctx->MM256_TABLE_HI_Y + y);
+    const GF256_M128 table_lo_y = _mm_load_si128(GF256Ctx.MM256_TABLE_LO_Y + y);
+    const GF256_M128 table_hi_y = _mm_load_si128(GF256Ctx.MM256_TABLE_HI_Y + y);
 
     // clr_mask = 0x0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f
     const GF256_M128 clr_mask = _mm_set1_epi8(0x0f);
@@ -585,7 +595,7 @@ extern "C" void gf256_muladd_mem(gf256_ctx* ctx, void * GF256_RESTRICT vz, uint8
 
     uint8_t * GF256_RESTRICT z8 = reinterpret_cast<uint8_t*>(z16);
     const uint8_t * GF256_RESTRICT x8 = reinterpret_cast<const uint8_t*>(x16);
-    const uint8_t * GF256_RESTRICT table = ctx->GF256_MUL_TABLE + ((unsigned)y << 8);
+    const uint8_t * GF256_RESTRICT table = GF256Ctx.GF256_MUL_TABLE + ((unsigned)y << 8);
 
     // Handle a block of 8 bytes
     if (bytes >= 8)
@@ -630,7 +640,7 @@ extern "C" void gf256_muladd_mem(gf256_ctx* ctx, void * GF256_RESTRICT vz, uint8
     }
 }
 
-extern "C" void gf256_mul_mem(gf256_ctx* ctx, void * GF256_RESTRICT vz, const void * GF256_RESTRICT vx, uint8_t y, int bytes)
+extern "C" void gf256_mul_mem(void * GF256_RESTRICT vz, const void * GF256_RESTRICT vx, uint8_t y, int bytes)
 {
     // Use a single if-statement to handle special cases
     if (y <= 1)
@@ -643,8 +653,8 @@ extern "C" void gf256_mul_mem(gf256_ctx* ctx, void * GF256_RESTRICT vz, const vo
     }
 
     // Partial product tables; see above
-    const GF256_M128 table_lo_y = _mm_load_si128(ctx->MM256_TABLE_LO_Y + y);
-    const GF256_M128 table_hi_y = _mm_load_si128(ctx->MM256_TABLE_HI_Y + y);
+    const GF256_M128 table_lo_y = _mm_load_si128(GF256Ctx.MM256_TABLE_LO_Y + y);
+    const GF256_M128 table_hi_y = _mm_load_si128(GF256Ctx.MM256_TABLE_HI_Y + y);
 
     // clr_mask = 0x0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f
     const GF256_M128 clr_mask = _mm_set1_epi8(0x0f);
@@ -671,7 +681,7 @@ extern "C" void gf256_mul_mem(gf256_ctx* ctx, void * GF256_RESTRICT vz, const vo
 
     uint8_t * GF256_RESTRICT z8 = reinterpret_cast<uint8_t*>(z16);
     const uint8_t * GF256_RESTRICT x8 = reinterpret_cast<const uint8_t*>(x16);
-    const uint8_t * GF256_RESTRICT table = ctx->GF256_MUL_TABLE + ((unsigned)y << 8);
+    const uint8_t * GF256_RESTRICT table = GF256Ctx.GF256_MUL_TABLE + ((unsigned)y << 8);
 
     // Handle a block of 8 bytes
     if (bytes >= 8)

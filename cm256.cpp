@@ -72,11 +72,6 @@
 */
 
 
-// Context object for GF(256) math
-static GF256_ALIGNED gf256_ctx GF256Ctx;
-static bool Initialized = false;
-
-
 //-----------------------------------------------------------------------------
 // Initialization
 
@@ -88,15 +83,8 @@ extern "C" int cm256_init_(int version)
         return -10;
     }
 
-    // Avoid re-initialization
-    if (Initialized)
-    {
-        return 0;
-    }
-    Initialized = true;
-
     // Return error code from GF(256) init if required
-    return gf256_init(&GF256Ctx);
+    return gf256_init();
 }
 
 
@@ -137,7 +125,7 @@ extern "C" int cm256_init_(int version)
 // Note that for x_i == x_0, this will return 1, so it is better to unroll out the first row.
 static GF256_FORCE_INLINE unsigned char GetMatrixElement(unsigned char x_i, unsigned char x_0, unsigned char y_j)
 {
-    return gf256_div(&GF256Ctx, gf256_add(y_j, x_0), gf256_add(x_i, y_j));
+    return gf256_div(gf256_add(y_j, x_0), gf256_add(x_i, y_j));
 }
 
 
@@ -187,7 +175,7 @@ extern "C" void cm256_encode_block(
             const uint8_t y_0 = 0;
             const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_0);
 
-            gf256_mul_mem(&GF256Ctx, recoveryBlock, originals[0].Block, matrixElement, params.BlockBytes);
+            gf256_mul_mem(recoveryBlock, originals[0].Block, matrixElement, params.BlockBytes);
         }
 
         // For each original data column,
@@ -196,7 +184,7 @@ extern "C" void cm256_encode_block(
             const uint8_t y_j = static_cast<uint8_t>(j);
             const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_j);
 
-            gf256_muladd_mem(&GF256Ctx, recoveryBlock, matrixElement, originals[j].Block, params.BlockBytes);
+            gf256_muladd_mem(recoveryBlock, matrixElement, originals[j].Block, params.BlockBytes);
         }
     }
 }
@@ -220,10 +208,6 @@ extern "C" int cm256_encode(
     if (!originals || !recoveryBlocks)
     {
         return -3;
-    }
-    if (!Initialized)
-    {
-        return -4;
     }
 
     uint8_t* recoveryBlock = static_cast<uint8_t*>(recoveryBlocks);
@@ -397,11 +381,11 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
         // L_kk = g[k] / (x_k + y_k)
         // U_kk = b[k] * (x_0 + y_k) / (x_k + y_k)
         const uint8_t D_kk = gf256_add(x_k, y_k);
-        const uint8_t L_kk = gf256_div(&GF256Ctx, g[k], D_kk);
-        const uint8_t U_kk = gf256_mul(&GF256Ctx, gf256_div(&GF256Ctx, b[k], D_kk), gf256_add(x_0, y_k));
+        const uint8_t L_kk = gf256_div(g[k], D_kk);
+        const uint8_t U_kk = gf256_mul(gf256_div(b[k], D_kk), gf256_add(x_0, y_k));
 
         // diag_D[k] = D_kk * L_kk * U_kk
-        diag_D[k] = gf256_mul(&GF256Ctx, D_kk, gf256_mul(&GF256Ctx, L_kk, U_kk));
+        diag_D[k] = gf256_mul(D_kk, gf256_mul(L_kk, U_kk));
 
         // Computing the k-th row of L and U
         uint8_t* row_L = matrix_L;
@@ -413,24 +397,24 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
 
             // L_jk = g[j] / (x_j + y_k)
             // U_kj = b[j] / (x_k + y_j)
-            const uint8_t L_jk = gf256_div(&GF256Ctx, g[j], gf256_add(x_j, y_k));
-            const uint8_t U_kj = gf256_div(&GF256Ctx, b[j], gf256_add(x_k, y_j));
+            const uint8_t L_jk = gf256_div(g[j], gf256_add(x_j, y_k));
+            const uint8_t U_kj = gf256_div(b[j], gf256_add(x_k, y_j));
 
             *matrix_L++ = L_jk;
             *row_U++ = U_kj;
 
             // g[j] = g[j] * (x_j + x_k) / (x_j + y_k)
             // b[j] = b[j] * (y_j + y_k) / (y_j + x_k)
-            g[j] = gf256_mul(&GF256Ctx, g[j], gf256_div(&GF256Ctx, gf256_add(x_j, x_k), gf256_add(x_j, y_k)));
-            b[j] = gf256_mul(&GF256Ctx, b[j], gf256_div(&GF256Ctx, gf256_add(y_j, y_k), gf256_add(y_j, x_k)));
+            g[j] = gf256_mul(g[j], gf256_div(gf256_add(x_j, x_k), gf256_add(x_j, y_k)));
+            b[j] = gf256_mul(b[j], gf256_div(gf256_add(y_j, y_k), gf256_add(y_j, x_k)));
         }
 
         // Do these row/column divisions in bulk for speed.
         // L_jk /= L_kk
         // U_kj /= U_kk
         const int count = N - (k + 1);
-        gf256_div_mem(&GF256Ctx, row_L, row_L, L_kk, count);
-        gf256_div_mem(&GF256Ctx, rotated_row_U, rotated_row_U, U_kk, count);
+        gf256_div_mem(row_L, row_L, L_kk, count);
+        gf256_div_mem(rotated_row_U, rotated_row_U, U_kk, count);
 
         // Copy U matrix row into place in memory.
         uint8_t* output_U = last_U + firstOffset_U;
@@ -450,7 +434,7 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
         const uint8_t y_j = ErasuresIndices[j];
         const int count = j;
 
-        gf256_mul_mem(&GF256Ctx, row_U, row_U, gf256_add(x_0, y_j), count);
+        gf256_mul_mem(row_U, row_U, gf256_add(x_0, y_j), count);
         row_U += count;
     }
 
@@ -461,10 +445,10 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
     // L_nn = g[N-1]
     // U_nn = b[N-1] * (x_0 + y_n)
     const uint8_t L_nn = g[N - 1];
-    const uint8_t U_nn = gf256_mul(&GF256Ctx, b[N - 1], gf256_add(x_0, y_n));
+    const uint8_t U_nn = gf256_mul(b[N - 1], gf256_add(x_0, y_n));
 
     // diag_D[N-1] = L_nn * D_nn * U_nn
-    diag_D[N - 1] = gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, L_nn, U_nn), gf256_add(x_n, y_n));
+    diag_D[N - 1] = gf256_div(gf256_mul(L_nn, U_nn), gf256_add(x_n, y_n));
 }
 
 void CM256Decoder::Decode()
@@ -488,7 +472,7 @@ void CM256Decoder::Decode()
             const uint8_t y_j = inRow;
             const uint8_t matrixElement = GetMatrixElement(x_i, x_0, y_j);
 
-            gf256_muladd_mem(&GF256Ctx, outBlock, matrixElement, inBlock, Params.BlockBytes);
+            gf256_muladd_mem(outBlock, matrixElement, inBlock, Params.BlockBytes);
         }
     }
 
@@ -532,7 +516,7 @@ void CM256Decoder::Decode()
             void* block_i = Recovery[i]->Block;
             const uint8_t c_ij = *matrix_L++; // Matrix elements are stored column-first, top-down.
 
-            gf256_muladd_mem(&GF256Ctx, block_i, c_ij, block_j, Params.BlockBytes);
+            gf256_muladd_mem(block_i, c_ij, block_j, Params.BlockBytes);
         }
     }
 
@@ -545,7 +529,7 @@ void CM256Decoder::Decode()
 
         Recovery[i]->Index = ErasuresIndices[i];
 
-        gf256_div_mem(&GF256Ctx, block, block, diag_D[i], Params.BlockBytes);
+        gf256_div_mem(block, block, diag_D[i], Params.BlockBytes);
     }
 
     /*
@@ -560,7 +544,7 @@ void CM256Decoder::Decode()
             void* block_i = Recovery[i]->Block;
             const uint8_t c_ij = *matrix_U++; // Matrix elements are stored column-first, bottom-up.
 
-            gf256_muladd_mem(&GF256Ctx, block_i, c_ij, block_j, Params.BlockBytes);
+            gf256_muladd_mem(block_i, c_ij, block_j, Params.BlockBytes);
         }
     }
 
@@ -584,10 +568,6 @@ extern "C" int cm256_decode(
     if (!blocks)
     {
         return -3;
-    }
-    if (!Initialized)
-    {
-        return -4;
     }
 
     // If there is only one block,

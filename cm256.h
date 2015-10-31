@@ -34,7 +34,7 @@
 #include <assert.h>
 
 // Library version
-#define CM256_VERSION 1
+#define CM256_VERSION 2
 
 
 #ifdef __cplusplus
