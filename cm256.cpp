@@ -73,7 +73,6 @@
 
 
 // Context object for GF(256) math
-// TBD: We can use constexpr in MSVC 2015 to initialize this at compile time.
 static GF256_ALIGNED gf256_ctx GF256Ctx;
 static bool Initialized = false;
 

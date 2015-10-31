@@ -35,6 +35,9 @@
 // Library version
 #define GF256_VERSION 1
 
+// TBD: Fix the polynomial at one value and use precomputed tables here to
+// simplify the API for GF256.h version 2.  Avoids user data alignment issues.
+
 
 //-----------------------------------------------------------------------------
 // Platform-Specific Definitions
