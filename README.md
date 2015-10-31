@@ -216,13 +216,11 @@ The approach taken in CM256 is similar to the Intel Storage Acceleration Library
 
 https://01.org/intel%C2%AE-storage-acceleration-library-open-source-version/downloads
 
-ISA-L more aggressively optimizes the matrix multiplication operation, which is the most expensive step of encoding and decoding.  Therefore, it should be faster in practice.
+ISA-L more aggressively optimizes the matrix multiplication operation, which is the most expensive step of encoding.
 
 CM256 takes better advantage of the m=1 case and the first recovery symbol, which is also possible with the Vandermonde matrices supported by ISA-L.
 
-ISA-L uses a O(N^3) Gaussian elimination solver for decoding.  The CM256 decoder solves the linear system using a fast O(N^2) LDU-decomposition algorithm from "Pivoting and Backward Stability of Fast Algorithms for Solving Cauchy Linear Equations" (T. Boros, T. Kailath, V. Olshevsky), which was optimized for efficient practical memory access times.
-
-In terms of decoding performance, the advantage may be to this library.
+ISA-L uses a O(N^3) Gaussian elimination solver for decoding.  The CM256 decoder solves the linear system using a fast O(N^2) LDU-decomposition algorithm from "Pivoting and Backward Stability of Fast Algorithms for Solving Cauchy Linear Equations" (T. Boros, T. Kailath, V. Olshevsky), which was hand-optimized for memory accesses.
 
 
 #### Credits
