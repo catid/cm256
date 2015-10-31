@@ -132,7 +132,6 @@ bool ExampleFileUsage()
 
     // Allocate and fill the original file data
     uint8_t* originalFileData = new uint8_t[OriginalFileBytes];
-
     for (int i = 0; i < OriginalFileBytes; ++i)
     {
         originalFileData[i] = (uint8_t)i;
