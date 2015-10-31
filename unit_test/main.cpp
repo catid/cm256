@@ -218,54 +218,40 @@ bool FinerPerfTimingTest()
         return false;
     }
 
+    static const int MaxBlockBytes = 10000; // multiple of 10
+
+    unsigned char* orig_data = new unsigned char[256 * MaxBlockBytes];
+
+    unsigned char* recoveryData = new unsigned char[256 * MaxBlockBytes];
+
     cm256_block blocks[256];
 
     LARGE_INTEGER tsum;
     tsum.QuadPart = 0;
 
     cm256_encoder_params params;
-    params.BlockBytes = 1296;
+    params.BlockBytes = 1296; // 1296
     params.OriginalCount = 100;
-    params.RecoveryCount = 10;
-
-    unsigned char* orig_data = new unsigned char[256 * params.BlockBytes];
-    unsigned char* recoveryData = new unsigned char[256 * params.BlockBytes];
+    params.RecoveryCount = 30;
 
     const int trials = 1000;
     for (int trial = 0; trial < trials; ++trial)
     {
-        for (int i = 0; i < params.BlockBytes * params.OriginalCount; ++i)
+        int x = 0;
+        for (int i = 0; i < params.RecoveryCount * params.BlockBytes; ++i)
         {
-            orig_data[i] = (uint8_t)i;
+            x ^= orig_data[i];
         }
+        cout << x << endl;
 
-        for (int i = 0; i < params.OriginalCount; ++i)
+        for (int i = 0; i < 256; ++i)
         {
-            blocks[i].Block = orig_data + i * params.BlockBytes;
+            blocks[i].Block = orig_data + i * MaxBlockBytes;
         }
-
-        if (cm256_encode(params, blocks, recoveryData))
-        {
-            return false;
-        }
-
-        // Initialize the indices
-        for (int i = 0; i < params.OriginalCount; ++i)
-        {
-            blocks[i].Index = cm256_get_original_block_index(params, i);
-        }
-
-        //// Simulate loss of data, substituting a recovery block in its place ////
-        for (int i = 0; i < params.RecoveryCount && i < params.OriginalCount; ++i)
-        {
-            blocks[i].Block = recoveryData + params.BlockBytes * i; // First recovery block
-            blocks[i].Index = cm256_get_recovery_block_index(params, i); // First recovery block index
-        }
-        //// Simulate loss of data, substituting a recovery block in its place ////
 
         LARGE_INTEGER t0; ::QueryPerformanceCounter(&t0);
 
-        if (cm256_decode(params, blocks))
+        if (cm256_encode(params, blocks, recoveryData))
         {
             return false;
         }
@@ -273,20 +259,12 @@ bool FinerPerfTimingTest()
         LARGE_INTEGER t1; ::QueryPerformanceCounter(&t1);
         tsum.QuadPart += t1.QuadPart - t0.QuadPart;
 
-        for (int i = 0; i < params.RecoveryCount && i < params.OriginalCount; ++i)
+        int y = 0;
+        for (int i = 0; i < params.RecoveryCount * params.BlockBytes; ++i)
         {
-            uint8_t* block = (uint8_t*)blocks[i].Block;
-            int index = blocks[i].Index;
-
-            for (int j = 0; j < params.BlockBytes; ++j)
-            {
-                const uint8_t expected = (uint8_t)(j + index * params.BlockBytes);
-                if (block[j] != expected)
-                {
-                    return false;
-                }
-            }
+            y ^= recoveryData[i];
         }
+        cout << y << endl;
     }
 
     double opusec = tsum.QuadPart * GetPerfFrequencyInverse() * 1000000. / trials;
