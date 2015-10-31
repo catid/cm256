@@ -361,7 +361,6 @@ void CM256Decoder::DecodeM1()
 // Generate the LU decomposition of the matrix
 void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, uint8_t* matrix_U)
 {
-#if 1
     // Schur-type-direct-Cauchy algorithm 2.5 from
     // "Pivoting and Backward Stability of Fast Algorithms for Solving Cauchy Linear Equations"
     // T. Boros, T. Kailath, V. Olshevsky
@@ -389,8 +388,7 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
     // Start the x_0 values arbitrarily from the original count.
     const uint8_t x_0 = static_cast<uint8_t>(Params.OriginalCount);
 
-    // TBD: Unrolling k = 0 is probably a good idea, since a lot of the math cancels out.
-
+    // Unrolling k = 0 just makes it slower for some reason.
     for (int k = 0; k < N - 1; ++k)
     {
         const uint8_t x_k = Recovery[k]->Index;
@@ -468,82 +466,6 @@ void CM256Decoder::GenerateLDUDecomposition(uint8_t* matrix_L, uint8_t* diag_D, 
 
     // diag_D[N-1] = L_nn * D_nn * U_nn
     diag_D[N - 1] = gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, L_nn, U_nn), gf256_add(x_n, y_n));
-#else
-    // Matrix size NxN
-    const int N = RecoveryCount;
-
-    // Generators
-    uint8_t g[256], b[256];
-    for (int i = 0; i < N; ++i)
-    {
-        g[i] = 1;
-        b[i] = 1;
-    }
-
-    uint8_t* matrix_U0 = matrix_U;
-
-    // Start the x_0 values arbitrarily from the original count.
-    const uint8_t x_0 = static_cast<uint8_t>(Params.OriginalCount);
-
-    for (int k = 0; k < N - 1; ++k)
-    {
-        const uint8_t x_k = Recovery[k]->Index;
-        const uint8_t y_k = ErasuresIndices[k];
-
-        // U(k,k) = ( g(k) * b(k) ) / ( x(k) - y(k) )
-        diag_D[k] = gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, g[k], b[k]), gf256_add(x_k, y_k));
-
-        uint8_t* row_L = matrix_L;
-        uint8_t* row_U = matrix_U;
-        for (int j = k + 1; j < N; ++j)
-        {
-            const uint8_t x_j = Recovery[j]->Index;
-            const uint8_t y_j = ErasuresIndices[j];
-
-            // L(j,k) = (( g(j) * b(k) ) / ( x(j) - y(k) )) / U(k,k);
-            *matrix_L++ = gf256_div(&GF256Ctx, gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, g[j], b[k]), gf256_add(x_j, y_k)), diag_D[k]);
-
-            // U(k,j) = (( g(k) * b(j) ) / ( x(k) - y(j) ));
-            *matrix_U++ = gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, g[k], b[j]), gf256_add(x_k, y_j));
-        }
-
-        for (int j = k + 1; j < N; ++j)
-        {
-            // g(j) = g(j) - g(k) * L(j,k);
-            g[j] = gf256_add(g[j], gf256_mul(&GF256Ctx, g[k], row_L[j - (k + 1)]));
-
-            // b(j) = b(j) - b(k) * U(k,j) / U(k,k);
-            b[j] = gf256_add(b[j], gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, b[k], row_U[j - (k + 1)]), diag_D[k]));
-        }
-    }
-
-    const uint8_t x_n = Recovery[N - 1]->Index;
-    const uint8_t y_n = ErasuresIndices[N - 1];
-
-    // U(n,n) = ( g(n) * b(n) ) / ( x(n)-y(n) );
-    diag_D[N-1] = gf256_div(&GF256Ctx, gf256_mul(&GF256Ctx, g[N-1], b[N-1]), gf256_add(x_n, y_n));
-
-    // Fix up diagonal.
-    for (int k = 0; k < N; ++k)
-    {
-        const uint8_t y_k = ErasuresIndices[k];
-
-        diag_D[k] = gf256_mul(&GF256Ctx, diag_D[k], gf256_add(x_0, y_k));
-    }
-
-    // Fix up matrix_U
-    for (int k = 0; k < N - 1; ++k)
-    {
-        for (int j = k + 1; j < N; ++j)
-        {
-            const uint8_t y_j = ErasuresIndices[j];
-
-            matrix_U0[0] = gf256_mul(&GF256Ctx, matrix_U0[0], gf256_add(x_0, y_j));
-            ++matrix_U0;
-        }
-    }
-
-#endif
 }
 
 void CM256Decoder::Decode()

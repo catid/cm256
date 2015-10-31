@@ -234,6 +234,11 @@ bool CheckMemSwap()
 
 bool FinerPerfTimingTest()
 {
+    ::SetPriorityClass(::GetCurrentProcess(), REALTIME_PRIORITY_CLASS);
+    ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+
+    ::Sleep(1000);
+
     if (cm256_init())
     {
         return false;
@@ -314,6 +319,10 @@ bool FinerPerfTimingTest()
     double mbps = (params.BlockBytes * params.OriginalCount / opusec);
 
     cout << opusec << " usec, " << mbps << " MBps" << endl;
+
+    ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_NORMAL);
+    ::SetPriorityClass(::GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
+
     return true;
 }
 
