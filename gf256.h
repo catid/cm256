@@ -190,7 +190,7 @@ extern void gf256_muladd_mem(void * GF256_RESTRICT vz, uint8_t y,
 extern void gf256_mul_mem(void * GF256_RESTRICT vz,
                           const void * GF256_RESTRICT vx, uint8_t y, int bytes);
 
-// Performs "x[] /= y" bulk memory operation
+// Performs "z[] = x[] / y" bulk memory operation
 static GF256_FORCE_INLINE void gf256_div_mem(void * GF256_RESTRICT vz,
                                              const void * GF256_RESTRICT vx, uint8_t y, int bytes)
 {
