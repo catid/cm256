@@ -41,6 +41,11 @@ using namespace std;
 #include "cm256.h"
 #include "SiameseTools.h"
 
+#ifdef _WIN32
+#include WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#endif
+
 #include <chrono>
 #include <thread>
 
