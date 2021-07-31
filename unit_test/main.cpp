@@ -42,7 +42,7 @@ using namespace std;
 #include "SiameseTools.h"
 
 #ifdef _WIN32
-#include WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #endif
 
