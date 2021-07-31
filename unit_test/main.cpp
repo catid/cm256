@@ -38,27 +38,16 @@ using namespace std;
     #pragma warning(pop)
 #endif
 
+#include "cm256.h"
+#include "SiameseTools.h"
 
-#include "../cm256.h"
-
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#endif
 
-static double GetPerfFrequencyInverse()
-{
-    // Static value containing frequency inverse of performance counter
-    static double PerfFrequencyInverse = 0.;
-
-    // If not initialized,
-    if (PerfFrequencyInverse == 0.)
-    {
-        // Initialize the inverse (same as in Timer code)
-        LARGE_INTEGER freq;
-        ::QueryPerformanceFrequency(&freq);
-        PerfFrequencyInverse = 1.0 / (double)freq.QuadPart;
-    }
-
-    return PerfFrequencyInverse;
-}
+#include <chrono>
+#include <thread>
 
 void initializeBlocks(cm256_block originals[256], int blockCount, int blockBytes)
 {
@@ -233,10 +222,12 @@ bool CheckMemSwap()
 
 bool FinerPerfTimingTest()
 {
+#ifdef _WIN32
     ::SetPriorityClass(::GetCurrentProcess(), REALTIME_PRIORITY_CLASS);
     ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+#endif
 
-    ::Sleep(1000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     if (cm256_init())
     {
@@ -245,8 +236,7 @@ bool FinerPerfTimingTest()
 
     cm256_block blocks[256];
 
-    LARGE_INTEGER tsum;
-    tsum.QuadPart = 0;
+    uint64_t tsum = 0;
 
     cm256_encoder_params params;
     params.BlockBytes = 1296;
@@ -288,15 +278,15 @@ bool FinerPerfTimingTest()
         }
         //// Simulate loss of data, substituting a recovery block in its place ////
 
-        LARGE_INTEGER t0; ::QueryPerformanceCounter(&t0);
+        const uint64_t t0 = siamese::GetTimeUsec();
 
         if (cm256_decode(params, blocks))
         {
             return false;
         }
 
-        LARGE_INTEGER t1; ::QueryPerformanceCounter(&t1);
-        tsum.QuadPart += t1.QuadPart - t0.QuadPart;
+        const uint64_t t1 = siamese::GetTimeUsec();
+        tsum += t1 - t0;
 
         for (int i = 0; i < params.RecoveryCount && i < params.OriginalCount; ++i)
         {
@@ -314,13 +304,15 @@ bool FinerPerfTimingTest()
         }
     }
 
-    double opusec = tsum.QuadPart * GetPerfFrequencyInverse() * 1000000. / trials;
-    double mbps = (params.BlockBytes * params.OriginalCount / opusec);
+    const double opusec = tsum / static_cast<double>( trials );
+    const double mbps = (params.BlockBytes * params.OriginalCount / opusec);
 
     cout << opusec << " usec, " << mbps << " MBps" << endl;
 
+#ifdef _WIN32
     ::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_NORMAL);
     ::SetPriorityClass(::GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
+#endif
 
     return true;
 }
@@ -360,7 +352,7 @@ bool BulkPerfTesting()
                 initializeBlocks(blocks, originalCount, blockBytes);
 
                 {
-                    LARGE_INTEGER t0; ::QueryPerformanceCounter(&t0);
+                    const uint64_t t0 = siamese::GetTimeUsec();
 
                     if (cm256_encode(params, blocks, recoveryData))
                     {
@@ -368,12 +360,11 @@ bool BulkPerfTesting()
                         return false;
                     }
 
-                    LARGE_INTEGER t1; ::QueryPerformanceCounter(&t1);
+                    const uint64_t t1 = siamese::GetTimeUsec();
+                    const int dt_usec = (int)static_cast<int64_t>( t1 - t0 );
 
-                    LARGE_INTEGER tsum;
-                    tsum.QuadPart = t1.QuadPart - t0.QuadPart;
-                    double opusec = tsum.QuadPart * GetPerfFrequencyInverse() * 1000000.;
-                    double mbps = (params.BlockBytes * params.OriginalCount / opusec);
+                    const double opusec = dt_usec;
+                    const double mbps = (params.BlockBytes * params.OriginalCount / opusec);
 
                     cout << "Encoder: " << blockBytes << " bytes k = " << originalCount << " m = " << recoveryCount << " : " << opusec << " usec, " << mbps << " MBps" << endl;
                 }
@@ -392,7 +383,7 @@ bool BulkPerfTesting()
                 }
 
                 {
-                    LARGE_INTEGER t0; ::QueryPerformanceCounter(&t0);
+                    const uint64_t t0 = siamese::GetTimeUsec();
 
                     if (cm256_decode(params, blocks))
                     {
@@ -400,12 +391,11 @@ bool BulkPerfTesting()
                         return false;
                     }
 
-                    LARGE_INTEGER t1; ::QueryPerformanceCounter(&t1);
+                    const uint64_t t1 = siamese::GetTimeUsec();
+                    const int dt_usec = (int)static_cast<int64_t>( t1 - t0 );
 
-                    LARGE_INTEGER tsum;
-                    tsum.QuadPart = t1.QuadPart - t0.QuadPart;
-                    double opusec = tsum.QuadPart * GetPerfFrequencyInverse() * 1000000.;
-                    double mbps = (params.BlockBytes * params.OriginalCount / opusec);
+                    const double opusec = dt_usec;
+                    const double mbps = (params.BlockBytes * params.OriginalCount / opusec);
 
                     cout << "Decoder: " << blockBytes << " bytes k = " << originalCount << " m = " << recoveryCount << " : " << opusec << " usec, " << mbps << " MBps" << endl;
                 }
