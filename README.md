@@ -20,6 +20,7 @@ For example, if a file is split into 3 equal pieces and sent over a network, `Or
 And if 2 additional redundant packets are generated, `RecoveryCount` is 2.
 In this case up to 256 - 3 = 253 additional redundant packets can be generated.
 
+cm256 is released under the BSD3 license for free use in commercial and open source projects.
 
 ##### Building: Quick Setup
 
